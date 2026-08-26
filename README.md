@@ -13,17 +13,34 @@ repository is original work built on top of that method.
 
 ## Pipeline overview
 
-Passive detection pipeline (run in order):
+The detection is a **single unified pipeline**: every ICS host in the full
+population is scored once, in one pass, against **one combined pool** of
+signatures and host-of-interest indicators. The adopted signals of Mladenov et al.
+(their two signatures and two network metrics) are folded into the *same* pool at
+their matching tiers, together with this work's new signatures and indicators.
+The model is monotone — no detection the adopted method alone would make can be
+lost — so there is **no residual pre-filtering step**; paper/Censys detections are
+retained as a floor and reported as part of the combined total.
+
+Two-tier confidence:
+
+- **HIGH** — any signature fires (the two adopted S7comm/ATG signatures **or** any new one).
+- **MEDIUM** — one **STRONG** indicator, **or** two **WEAK** indicators. (Adopted metrics join at their tiers: hosting AS-type and >30 open ports are STRONG; education AS-type and >10 open ports are WEAK.)
+- **LOW** — a single WEAK indicator alone (a host of interest, not counted as a honeypot).
+
+Run in order:
 
 | Step | Script | Purpose |
 |------|--------|---------|
 | 1 | `paginate_all.py` | Retrieve the full ICS population from the Censys Platform API (paginated). |
 | 2 | `enrich_ipinfo.py` | Add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). |
-| 3 | `paper_original_port.py` | Faithful port of the adopted Mladenov et al. classifier (HIGH/MEDIUM honeypot labelling). |
-| 4 | `build_residual.py` | Build the **residual** set: ICS hosts that neither Censys nor the paper method flagged. |
-| 5 | `indicators.py` | Two new passive indicators (vendor conflict, template identifier) over the residual set. |
-| 6 | `deep_indicators.py` | Full set of new passive signatures + indicators + the unified monotone classifier. |
-| 7 | `honeypot_analysis.py` | Reproduce the paper's Section-6 analyses on the resulting honeypot set (figures + `analysis_stats.json`). |
+| 3 | `deep_indicators.py` | **The unified classifier.** Scores every ICS host in a single pass over the full population, applying the adopted signals + all new signatures and indicators together, and writes `deep_findings.csv`. |
+| 4 | `honeypot_analysis.py` | Reproduce the paper's Section-6 analyses on the resulting honeypot set (figures + `analysis_stats.json`). |
+
+Supporting modules (imported by the pipeline, not separate steps):
+
+- `paper_original_port.py` — faithful port of the adopted Mladenov et al. classifier; its signals are folded into the unified pool via `paper_signals()`.
+- `indicators.py` — defines the new passive indicators A (vendor conflict) and B (template identifier) used by the classifier. Its `__main__` is an optional standalone A/B diagnostic.
 
 Optional read-only active-probing validation:
 
@@ -51,8 +68,7 @@ $env:CENSYS_ORG = "your-org-id"
 
 py paginate_all.py                 # -> pop_all.json
 py enrich_ipinfo.py                # -> ipinfo_map.json
-py build_residual.py               # -> residual.json
-py deep_indicators.py              # -> deep_findings.csv
+py deep_indicators.py              # unified classifier -> deep_findings.csv
 py honeypot_analysis.py            # -> figures + analysis_stats.json
 ```
 

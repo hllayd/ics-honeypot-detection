@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""deep_indicators.py - NEW passive ICS honeypot indicators (not present in the
-paper) over the RESIDUAL set + an extension of the paper's 'host of interest'
-logic.
+"""deep_indicators.py - The UNIFIED passive ICS honeypot classifier.
 
-Input : residual.json  (the 112k hosts that neither Censys nor the paper could
-                         label as honeypots)
+This is the single detection pipeline: it scores EVERY ICS host, in one pass over
+the full population, against ONE combined pool of signatures and host-of-interest
+indicators. The adopted signals of Mladenov et al. (their two signatures and two
+network metrics) are folded into the SAME pool at their matching tiers (see
+paper_signals()), together with this work's new signatures and indicators. The
+model is monotone: because the adopted signals are retained, no host the paper
+method alone would detect can ever drop below its grade; the new signals can only
+hold a host in place or raise it.
+
+There is NO residual pre-filtering step (that was an earlier approach). The paper
+and Censys detections are not removed up front; instead they are retained as a
+monotone floor and reported as part of the combined total.
+
+Input : pop_all.json  (the full Censys pull; every ICS host is scored)
 Output: deep_findings.csv (per-host triggered indicators + confidence)
         + summary table (stdout)
 
@@ -93,15 +103,16 @@ template + the libiec61850 signature).
 Also reused: A) vendor-conflict, B) template-ID (from indicators.py).
 
 --------------------------------------------------------------------------------
-CONFIDENCE (the paper's 'host of interest' logic, EXTENDED):
-Paper: if a host is flagged by more than one INDEPENDENT metric => MEDIUM; by a
-single metric => LOW. The residual contains the paper's LOW hosts (the residual
-only removed HIGH/MEDIUM). The independent metrics the paper used for this host
-(many_open_ports>10, as_education) + the NEW metrics here (A..H) are summed:
-  total_independent_metrics >= 2  => MEDIUM  (if one is STRONG => HIGH)
-  total_independent_metrics == 1  => LOW
-So the paper's LOW hosts are upgraded to MEDIUM when a new independent metric is
-added (the user's goal).
+CONFIDENCE (the unified two-tier model; the paper signals join the same pool):
+  HIGH   = any signature fires (our SIG_* OR the adopted conpot/snap7/gaspot).
+  MEDIUM = one STRONG indicator (our STRONG host-of-interest OR the adopted
+           hosting AS-type / >30 open ports), OR at least two WEAK indicators
+           (our WEAK host-of-interest + the adopted education / >10 open ports).
+  LOW    = a single WEAK indicator alone (a host of interest, not a honeypot).
+Every ICS host in the full population is scored once against this combined pool.
+Because the adopted signals are retained at their own tiers, the model is
+monotone: any host that gains a HIGH/MEDIUM label it would not have had from the
+adopted signals alone does so purely because of a new signature or indicator.
 """
 import csv
 import hashlib
@@ -125,7 +136,7 @@ def _arg(name, default):
     return default
 
 
-PATH = os.path.join(HERE, _arg("--file", "residual.json"))
+PATH = os.path.join(HERE, _arg("--file", "pop_all.json"))
 OUT = os.path.join(HERE, _arg("--out", "deep_findings.csv"))
 
 ICS_OBJS = ("modbus", "s7", "bacnet", "eip", "fox", "iec60870_5_104",
@@ -801,8 +812,14 @@ def main():
         d = json.load(f)
     recs = [h.get("host_v1", {}).get("resource") for h in d["result"]["hits"]]
     recs = [r for r in recs if r]
+    N_all = len(recs)
+    # Keep only ICS hosts; the unified classifier then scores EVERY ICS host in a
+    # single pass. There is no residual pre-filtering: the adopted paper signals
+    # join the same pool via paper_signals(), so paper/Censys detections are kept
+    # as a monotone floor rather than removed up front.
+    recs = [r for r in recs if "ICS" in host_labels(r.get("services", []))]
     N = len(recs)
-    print(f"residual hosts: {N}")
+    print(f"ICS hosts: {N} / {N_all}")
 
     print("Computing indicator C (cross-host cluster)...")
     cluster = build_cluster_labels(recs)
