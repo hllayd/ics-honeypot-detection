@@ -262,15 +262,35 @@ stats["signature_indicator_combinations"] = top_combo
 stats["signature_indicator_singletons"] = single_counter.most_common()
 stats["distinct_combinations"] = len(combo_counter)
 
-fig, ax = plt.subplots(figsize=(9, 6.5))
-labs = [c for c, _ in top_combo][::-1]
-vals = [v for _, v in top_combo][::-1]
-short_labs = [(l if len(l) <= 48 else l[:45] + "...") for l in labs]
-ax.barh(short_labs, vals, color="#34495e")
+
+def abbrev_signal(s):
+    """Compact label for one signal: our indicators -> their letter (A..P),
+    everything else (paper metrics / signatures) kept as-is."""
+    import re
+    m = re.match(r"^([A-KNP])_", s)
+    return m.group(1) if m else s
+
+
+def abbrev_combo(combo):
+    return " + ".join(abbrev_signal(x) for x in combo.split(" + "))
+
+
+# largest at top: keep most_common order, place with explicit y positions so
+# duplicate/near labels can never collapse onto the same row.
+labs = [abbrev_combo(c) for c, _ in top_combo]
+vals = [v for _, v in top_combo]
+y = list(range(len(vals)))[::-1]  # row 0 at top
+
+fig, ax = plt.subplots(figsize=(9.5, 6.5))
+ax.barh(y, vals, color="#34495e")
+ax.set_yticks(y)
+ax.set_yticklabels(labs, fontsize=8)
+ax.set_xlim(0, max(vals) * 1.12)
 ax.set_xlabel("H+M honeypot hosts")
-ax.set_title("6.7  Top-20 signature / indicator combinations by host count")
-for i, v in enumerate(vals):
-    ax.text(v, i, " " + f"{v:,}", va="center", fontsize=7)
+ax.set_title("6.7  Top-20 signature / indicator combinations by host count",
+             fontsize=10, loc="right")
+for yi, v in zip(y, vals):
+    ax.text(v + max(vals) * 0.01, yi, f"{v:,}", va="center", fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig67_combinations.png", dpi=140); plt.close(fig)
 
 # =========================================================
