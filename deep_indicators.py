@@ -3,8 +3,9 @@
 
 This is the single detection pipeline: it scores EVERY ICS host, in one pass over
 the full population, against ONE combined pool of signatures and host-of-interest
-indicators. The adopted signals of Mladenov et al. (their two signatures and two
-network metrics) are folded into the SAME pool at their matching tiers (see
+indicators. The adopted signals of Mladenov et al. (their three signatures --
+conpot/snap7 S7comm defaults and the GasPot ATG banner -- and two network metrics)
+are folded into the SAME pool at their matching tiers (see
 paper_signals()), together with this work's new signatures and indicators. The
 model is monotone: because the adopted signals are retained, no host the paper
 method alone would detect can ever drop below its grade; the new signals can only
