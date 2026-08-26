@@ -17,7 +17,11 @@ in analysis_stats.json):
      hosts, with the median for each.                  -> fig65_ports_cdf.png
   7. Multi-protocol distribution: number of distinct ICS protocols a single
      flagged host emulates (bucketed 1..6+).           -> fig66_multiproto.png
-  8. Oddballs: the flagged hosts with the largest open-port counts (table only,
+  8. Signature / indicator combinations: how many hosts are flagged by each
+     distinct signature + host-of-interest set (the answer to "which
+     combination flagged how many hosts"), plus the per-signal singleton
+     counts.                                            -> fig67_combinations.png
+  9. Oddballs: the flagged hosts with the largest open-port counts (table only,
      in analysis_stats.json).
 
 Inputs:  deep_findings_aug20.csv (classifier output), population_aug20.json
@@ -235,7 +239,42 @@ for i, v in enumerate(vs):
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig66_multiproto.png", dpi=140); plt.close(fig)
 
 # =========================================================
-# 6.7 Oddballs: hosts with an unusually large number of open ports
+# 6.7 Signature / indicator combinations: how many hosts per combination
+#     (which signature + host-of-interest set flags each host, and how often)
+# =========================================================
+combo_counter = collections.Counter()
+single_counter = collections.Counter()
+for r in hm:
+    parts = []
+    for src in ("new_indicators", "paper_metrics"):
+        for x in (r.get(src) or "").split(";"):
+            x = x.strip()
+            if x:
+                parts.append(x)
+    if not parts:
+        continue
+    combo = " + ".join(sorted(set(parts)))
+    combo_counter[combo] += 1
+    for x in set(parts):
+        single_counter[x] += 1
+top_combo = combo_counter.most_common(20)
+stats["signature_indicator_combinations"] = top_combo
+stats["signature_indicator_singletons"] = single_counter.most_common()
+stats["distinct_combinations"] = len(combo_counter)
+
+fig, ax = plt.subplots(figsize=(9, 6.5))
+labs = [c for c, _ in top_combo][::-1]
+vals = [v for _, v in top_combo][::-1]
+short_labs = [(l if len(l) <= 48 else l[:45] + "...") for l in labs]
+ax.barh(short_labs, vals, color="#34495e")
+ax.set_xlabel("H+M honeypot hosts")
+ax.set_title("6.7  Top-20 signature / indicator combinations by host count")
+for i, v in enumerate(vals):
+    ax.text(v, i, " " + f"{v:,}", va="center", fontsize=7)
+fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig67_combinations.png", dpi=140); plt.close(fig)
+
+# =========================================================
+# 6.8 Oddballs: hosts with an unusually large number of open ports
 # =========================================================
 odd = sorted(((ip_portcount.get(r["ip"], 0), r["ip"], r["country"],
                r["as_name"], r["protocols"]) for r in hm),
@@ -249,3 +288,4 @@ print("tiers:", dict(tier))
 print("biz type:", dict(btype))
 print("median ports hm/real:", stats["median_ports_hm"], stats["median_ports_real"])
 print("multiproto:", stats["multi_protocol_hist"])
+print("distinct signature/indicator combinations:", stats["distinct_combinations"])
