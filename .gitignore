@@ -1,0 +1,24 @@
+# Commercial / proprietary data (do NOT redistribute)
+*.mmdb
+
+# Generated data and intermediate outputs (contain real host IPs)
+*.json
+*.csv
+*.xlsx
+*.html
+fig_analysis/
+batch*_outputs*/
+
+# Query inputs may contain account-specific details
+query*.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

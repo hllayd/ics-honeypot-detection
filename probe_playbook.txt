@@ -1,0 +1,140 @@
+ACTIVE PROBE PLAYBOOK (READ-ONLY)
+
+Scope
+- Use only on authorized targets.
+- No write/function-changing operations.
+- Goal: validate NON-PRODUCTIVE-ICS hypotheses and extract new passive indicators.
+
+How to use with active_probe_top100.csv
+- For each IP, read protocol_targets and probe_bundle.
+- Run only probes matching exposed protocol/port.
+
+Notation
+- <IP> = target host IP
+- <PORT> = protocol port from protocol_targets
+
+PROBE IDS
+
+S7_READONLY
+1) nmap -n -Pn -sT -p <PORT> --script s7-info <IP>
+Capture:
+- module_type, module_name, serial, copyright
+Indicator ideas:
+- repeated serial on unrelated ASNs, impossible module identity combinations
+
+MODBUS_READONLY
+1) nmap -n -Pn -sT -p <PORT> --script modbus-discover,modbus-device-identification <IP>
+Capture:
+- vendor/product/revision, MEI object IDs
+Indicator ideas:
+- placeholder identity strings, inconsistent device-id blocks, cloned identity tuples
+
+BACNET_READONLY
+1) nmap -n -Pn -sU -p <PORT> --script bacnet-info <IP>
+Capture:
+- vendor_id, vendor_name, model_name, object_name, description, location
+Indicator ideas:
+- registry id/name mismatch, template object_name/location patterns, impossible reserved IDs
+
+EIP_READONLY
+1) nmap -n -Pn -sU -p <PORT> --script enip-info <IP>
+Capture:
+- Vendor ID, Device Type, Product Code, Revision, Serial
+Indicator ideas:
+- cross-AS serial clones, impossible identity tuple reuse
+
+OPCUA_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) opcua scan endpoints (any read-only client):
+   - enumerate endpoint URLs
+   - read ServerStatus/BuildInfo only
+Capture:
+- applicationUri, productUri, applicationName, endpoint profile matrix
+Indicator ideas:
+- SDK default URNs, degenerate chunk/window parameters, templated endpoint sets
+
+MMS_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) read-only MMS association attempt (no control commands)
+Capture:
+- implementation/vendor/model naming fields when available
+Indicator ideas:
+- default placeholders (vendor/model), repeated implementation signatures
+
+IEC104_READONLY
+1) tcp connect to <PORT>
+2) send STARTDT act: hex 68 04 07 00 00 00
+3) expect STARTDT con: hex 68 04 0B 00 00 00
+Capture:
+- exact U-frame behavior, timing, malformed fixed replies
+Indicator ideas:
+- constant fake frame patterns across many hosts
+
+FINS_READONLY
+1) udp query on <PORT> using read-only node discovery/status request
+Capture:
+- node addresses, model identity fields if available
+Indicator ideas:
+- repeated cloned node identity on unrelated ASNs
+
+FOX_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) read-only protocol hello/banner extraction
+Capture:
+- version/app_version fields, station identity strings
+Indicator ideas:
+- rigid template identity blocks reused cross-AS
+
+DNP3_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) read-only link-layer status/integrity poll (no control)
+Capture:
+- stable link-layer response format, object support footprint
+Indicator ideas:
+- emulator-fixed object support matrix
+
+WDBRPC_READONLY
+1) nmap -n -Pn -sU -p <PORT> -sV <IP>
+Capture:
+- VxWorks target descriptors, board strings
+Indicator ideas:
+- same board string + same memory layout pattern across unrelated ASNs
+
+ATG_READONLY
+1) tcp connect to <PORT>
+2) send read-only inventory/status query only
+Capture:
+- inventory frame formatting, error code style, date/time formatting
+Indicator ideas:
+- GasPot-like formatting artifacts, deterministic malformed date grammar
+
+CODESYS_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) read-only runtime metadata query (no login/write)
+Capture:
+- runtime version, OS fingerprint fragment, vendor signature
+Indicator ideas:
+- template runtime identity replicated at scale
+
+PCWORX_READONLY / GE_SRTP_READONLY / HART_READONLY / PROCONOS_READONLY
+1) nmap -n -Pn -sT -p <PORT> -sV <IP>
+2) protocol-specific read-only hello/status where tooling exists
+Capture:
+- deterministic identity tuples, malformed fixed replies
+Indicator ideas:
+- repeated fixed response templates across unrelated networks
+
+DATA CAPTURE FORMAT (for later analysis)
+- ip
+- protocol
+- port/transport
+- raw request hex/text
+- raw response hex/text
+- parsed identity fields
+- timestamp UTC
+- scanner vantage info
+
+ANALYSIS RULES AFTER PROBING
+- Strong candidate: protocol identity impossible/inconsistent with official registry or protocol constraints.
+- Medium candidate: stable template identity reused across unrelated ASNs/regions.
+- Reject candidate: seen on known legitimate product families with plausible deployment pattern.
