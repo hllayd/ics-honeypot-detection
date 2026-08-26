@@ -175,28 +175,56 @@ Supporting module (imported by the pipeline, not a separate step):
 ### Optional read-only active-probing validation and discovery
 
 The passive pipeline above assigns confidence only from Censys scan data. It never
-touches the hosts. The active-probing stage is a **separate, optional check**. It
-has two goals:
+touches the hosts. The active-probing stage is a **separate, optional, read-only
+check**. Every probe only reads a value or asks for status; it never writes,
+controls, or changes anything, it runs only against authorized targets, and because
+it never alters a host's state it is safe against production-adjacent ICS. It has
+two goals — **validation** (are the passive labels correct?) and **discovery** (which
+live signs also have a passive shadow?). Both reuse a single join between the passive
+verdict `P` and the active ground-truth class `A`.
 
-1. **Check that the passive labels are correct.** A passive HIGH/MEDIUM label is
-   only a guess based on indirect fields. To test it, we send a few read-only
-   queries to a small sample of flagged hosts. Each query asks the host for its own
-   identity (vendor, model, serial, endpoints, banner). We then compare the real
-   answer with what the classifier predicted. This tells us which labels are correct
-   and which are false positives. In short, it gives an estimate of how precise the
-   passive method is, without having to trust it blindly.
-2. **Find new passive indicators.** Some honeypot signs live in fields that a
-   wide-scan platform does not always collect (for example MEI object blocks, OPC-UA
-   endpoint lists, or IEC-104 timing). Probing a confirmed host shows these fields.
-   `correlate_active_passive.py` then checks whether the same sign is also visible in
-   the Censys data. If it is, we can turn it into a new passive rule for the next
-   run. So active probing is used to build better passive rules, not to do the
-   detection itself.
+**Step 1 — Probe queries (`probe_active.py`).** The prober asks each host for its own
+identity using the native read/status request of the protocol on that port:
 
-The stage is **read-only** on purpose. Every probe only reads or asks for status.
-It never writes, controls, or changes anything, and it runs only against authorized
-targets. Because it never changes a host's state, it is safe to run against
-production-adjacent ICS.
+| Protocol (port) | Read-only request | Fields returned |
+|-----------------|-------------------|-----------------|
+| BACnet (UDP 47808) | Who-Is → I-Am, then ReadProperty on the Device object | device instance, vendor id, object-name, vendor-name, model-name, description, location, firmware/software revision |
+| Modbus/TCP (502) | Read Device Identification (MEI 0x0E, function 0x2B; basic + regular) | vendor name, product code |
+| EtherNet/IP (TCP 44818) | ListIdentity + ListServices | serial number, product name, vendor/device ids |
+| S7comm (TCP 102) | COTP connect + S7 identification read | module/vendor identity |
+| OPC-UA (TCP 4840) | Hello → OpenSecureChannel → GetEndpoints | endpoint URLs, application_uri, ServerStatus/BuildInfo |
+
+**Step 2 — Classify the live answer into `A` (`correlate_active_passive.py`, `classify()`).**
+Each answer is mapped to one ground-truth class by fixed rules:
+
+| Class `A` | Rule |
+|-----------|------|
+| `SUSPECT` | an identity field carries an injected web payload (e.g. `<script>`, SQL `union`), **or** a live device reports a reserved/non-existent vendor id (555, 666, 911, 999, …), **or** the reported vendor name and vendor id belong to different brands |
+| `REAL_DEVICE` | a plausible, self-consistent identity: a live BACnet device with a same-family vendor and model, or a Modbus identification returning a genuine vendor and product |
+| `ALIVE-NO-ID` | speaks the protocol (e.g. a valid Modbus exception) but returns no identity → weakly real |
+| `DEAD` | no protocol response at all → inconclusive, excluded from the contrast |
+
+**Step 3a — Validation (compare `P` with `A`).** Join every probed host by IP.
+Agreement (`P` = honeypot and `A` = `SUSPECT`) confirms the label; disagreement
+(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. The sample is chosen by evidence
+combination, not at random, so every classification pathway is covered — not only the
+large Conpot-derived cluster. This confirmed the true positives and rejected the draft
+indicators **L** and **M**, whose hosts turned out to be genuine cellular gateways. For
+example, the same EtherNet/IP serial `0x006cb804` appeared passively across four
+autonomous systems; a read-only ListIdentity to each returned the identical serial and
+product string, confirming a single cloned emulator image (indicator **F**), not four
+separate PLCs.
+
+**Step 3b — Discovery (find the passive shadow of `A`).** Group the probed hosts by
+their active class `A`, then, for each passive field, contrast the value frequencies
+between the `SUSPECT` and `REAL_DEVICE` groups. A value that concentrates in `SUSPECT`
+and is absent from real devices is a discriminator; if the same value **also has a
+passive shadow** in the Censys data, it becomes a new, purely passive rule for the next
+run. This is how indicator **N** (EtherNet/IP ListServices with an empty ListIdentity,
+raw `63 00 00 00 00 00 00 00 01 00 00 00`), the WAGO co-location indicator **K**
+(`urn:wago-com:opcua-server`), and the open62541 default `application_uri`
+(`urn:unconfigured:application`) behind indicator **I** were first found. Active probing
+therefore builds better passive rules; it is not the detector itself.
 
 | Script | Purpose & Inputs/Outputs |
 |--------|--------------------------|
