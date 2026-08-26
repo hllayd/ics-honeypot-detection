@@ -227,9 +227,9 @@ method, not a statistical precision measurement. On that sample it confirmed pos
 and rejected the draft indicators **L** and **M**, whose hosts turned out to be genuine
 cellular gateways. Two concrete cases show both directions:
 
-- *Positive confirmation:* hosts flagged for a reserved BACnet vendor id answered a live
-  Who-Is with `vendor_id 888` / name `Hankyong`; 888 is not an assigned ASHRAE vendor id,
-  so a live device using it is an emulator — matching the passive verdict.
+- *Positive confirmation:* hosts flagged for a reserved BACnet vendor id (indicator **J**)
+  answered a live Who-Is with `vendor_id 888` / name `Hankyong`; 888 is not an assigned
+  ASHRAE vendor id, so a live device using it is an emulator — matching the passive verdict.
 - *Cross-host confirmation:* the same EtherNet/IP serial `0x006cb804` appeared passively
   across four autonomous systems, and a read-only ListIdentity to each returned the
   identical serial and product string, confirming a single cloned emulator image
