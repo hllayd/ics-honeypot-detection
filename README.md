@@ -193,8 +193,8 @@ vendor-name/id registry mismatch ranked highest, then ordered by score and by ho
 actively-probeable protocols it exposes. The top hundred are written to
 `active_probe_top100.csv` with a per-protocol probe bundle. Successive batches exclude
 already-probed IPs, and optional filters drop UDP-only or cellular-carrier hosts that
-earlier batches showed to be a false-positive trap. **Ten to twelve such batches were
-run in total.**
+earlier batches showed to be a false-positive trap. **Fourteen such batches were run in
+total, probing about 1,400 host records in all.**
 
 **Step 1 — Probe queries (`probe_active.py`).** The prober asks each host for its own
 identity using the native read/status request of the protocol on that port:
@@ -219,13 +219,21 @@ Each answer is mapped to one ground-truth class by fixed rules:
 
 **Step 3a — Validation (compare `P` with `A`).** Join every probed host by IP.
 Agreement (`P` = honeypot and `A` = `SUSPECT`) confirms the label; disagreement
-(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. This confirmed the true positives
+(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. This is **not** an exhaustive
+re-check of every flagged host: the candidate selector deliberately targets
+below-threshold hosts, so validation covers a **representative sample** across the
+different classification pathways, not the full positive set — a confidence check on the
+method, not a statistical precision measurement. On that sample it confirmed positives
 and rejected the draft indicators **L** and **M**, whose hosts turned out to be genuine
-cellular gateways. Validation can also confirm an existing cross-host rule: the same
-EtherNet/IP serial `0x006cb804` appeared passively across four autonomous systems, and a
-read-only ListIdentity to each returned the identical serial and product string,
-confirming a single cloned emulator image (indicator **F**) rather than four separate
-PLCs.
+cellular gateways. Two concrete cases show both directions:
+
+- *Positive confirmation:* hosts flagged for a reserved BACnet vendor id answered a live
+  Who-Is with `vendor_id 888` / name `Hankyong`; 888 is not an assigned ASHRAE vendor id,
+  so a live device using it is an emulator — matching the passive verdict.
+- *Cross-host confirmation:* the same EtherNet/IP serial `0x006cb804` appeared passively
+  across four autonomous systems, and a read-only ListIdentity to each returned the
+  identical serial and product string, confirming a single cloned emulator image
+  (indicator **F**) rather than four separate PLCs.
 
 **Step 3b — Discovery (find the passive shadow of `A`).** Group the probed hosts by
 their active class `A`, then, for each passive field, contrast the value frequencies
