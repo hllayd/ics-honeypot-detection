@@ -262,6 +262,21 @@ stats["signature_indicator_combinations"] = top_combo
 stats["signature_indicator_singletons"] = single_counter.most_common()
 stats["distinct_combinations"] = len(combo_counter)
 
+# a signal is "adopted" (from Mladenov et al.) if it is a paper network metric
+# or one of the paper signatures; everything else is contributed by this work.
+_ADOPTED = {"paper_hosting", "paper_many_open_ports", "paper_many_open_ports_high",
+            "paper_as_education", "honeypot_defaults_conpot", "honeypot_defaults_snap7",
+            "gaspot_newlines", "gaspot_date"}
+
+
+def is_contributed_signal(s):
+    return s not in _ADOPTED
+
+
+def combo_is_contributed(combo):
+    """True if at least one signal in the combination is contributed by this work."""
+    return any(is_contributed_signal(x) for x in combo.split(" + "))
+
 
 def abbrev_signal(s):
     """Compact label for one signal: our indicators -> their letter (A..P),
@@ -275,22 +290,38 @@ def abbrev_combo(combo):
     return " + ".join(abbrev_signal(x) for x in combo.split(" + "))
 
 
+stats["signature_indicator_combinations_flagged"] = [
+    [c, n, combo_is_contributed(c)] for c, n in top_combo]
+
 # largest at top: keep most_common order, place with explicit y positions so
 # duplicate/near labels can never collapse onto the same row.
 labs = [abbrev_combo(c) for c, _ in top_combo]
 vals = [v for _, v in top_combo]
+contributed = [combo_is_contributed(c) for c, _ in top_combo]
 y = list(range(len(vals)))[::-1]  # row 0 at top
 
+C_CONTRIB = "#c0392b"   # combinations that rely on a contributed signal
+C_ADOPTED = "#95a5a6"   # combinations carried purely by the adopted signals
+bar_colors = [C_CONTRIB if c else C_ADOPTED for c in contributed]
+
 fig, ax = plt.subplots(figsize=(9.5, 6.5))
-ax.barh(y, vals, color="#34495e")
+ax.barh(y, vals, color=bar_colors)
 ax.set_yticks(y)
-ax.set_yticklabels(labs, fontsize=8)
+lbl_objs = ax.set_yticklabels(labs, fontsize=8)
+# colour the tick labels to match their bar (same order as labs)
+for tick, c in zip(lbl_objs, contributed):
+    tick.set_color(C_CONTRIB if c else "#333333")
 ax.set_xlim(0, max(vals) * 1.12)
 ax.set_xlabel("H+M honeypot hosts")
 ax.set_title("6.7  Top-20 signature / indicator combinations by host count",
              fontsize=10, loc="right")
-for yi, v in zip(y, vals):
-    ax.text(v + max(vals) * 0.01, yi, f"{v:,}", va="center", fontsize=8)
+for yi, v, c in zip(y, vals, contributed):
+    ax.text(v + max(vals) * 0.01, yi, f"{v:,}", va="center", fontsize=8,
+            color=C_CONTRIB if c else "#333333")
+from matplotlib.patches import Patch
+ax.legend(handles=[Patch(color=C_CONTRIB, label="relies on a contributed signal"),
+                   Patch(color=C_ADOPTED, label="adopted signals only")],
+          fontsize=8, loc="lower right")
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig67_combinations.png", dpi=140); plt.close(fig)
 
 # =========================================================
