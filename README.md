@@ -11,6 +11,89 @@ logic from the authors' repository
 (<https://github.com/martinmladenov/ICS-Honeypots>). All other analysis in this
 repository is original work built on top of that method.
 
+## Honeypot corpus examined
+
+To ground the signature work, a broad corpus of publicly available ICS honeypots
+and the open ICS protocol libraries they embed was reviewed. The **Kind** column
+marks each entry as an ICS honeypot in its own right or an ICS protocol library /
+reference stack; for the library entries the **Notes** state which honeypot(s)
+embed them. A key structural observation is that most of these honeypots wrap
+Conpot (GridPot, ICSpot, T-Pot and DiPot all reproduce Conpot's default
+identities); the remaining fingerprintable defaults come not from the honeypots'
+own code but from the open protocol libraries they embed (snap7, FreeOpcUa,
+open62541, node-opcua, pymodbus, bacnet-stack, libiec61850).
+
+| Name | Kind | Notes |
+|------|------|-------|
+| Conpot | ICS honeypot | Reference low-interaction ICS honeypot; ships templates for S7comm, Modbus, BACnet, EtherNet/IP (ENIP), IEC-104, and others. |
+| snap7 | ICS protocol library | Open-source S7 server library; source of the `SNAP7-SERVER` S7comm signature adopted from Mladenov et al. Runs standalone as a soft-PLC and is also embeddable in S7 honeypots. |
+| GasPot | ICS honeypot | ATG (Veeder-Root) honeypot; source of the ATG banner heuristics adopted from Mladenov et al. |
+| GridPot | ICS honeypot | Wraps Conpot and adds an IEC 61850 / MMS layer via the libiec61850 reference library. |
+| HoneyPLC | ICS honeypot | Profile-based honeypot using identities captured from real PLCs; no hard-coded default identity. |
+| ICSpot | ICS honeypot | Wraps Conpot; reproduces Conpot defaults. |
+| T-Pot | ICS honeypot | Honeypot platform/orchestrator that bundles Conpot among others. |
+| DiPot | ICS honeypot | Distributed honeypot built around Conpot. |
+| CryPLH | ICS honeypot | High-interaction PLC honeypot (S7/Siemens-oriented). |
+| FreeOpcUa (python-opcua / opcua-asyncio) | ICS protocol library | Pure-Python OPC-UA server library; example server ships default application/product URIs. Embedded by OPC-UA honeypots and soft servers. |
+| open62541 | ICS protocol library | Open-source C OPC-UA stack; sample server ships a default application URN. Embedded by OPC-UA honeypots and soft servers. |
+| node-opcua | ICS protocol library | Node.js OPC-UA stack; sample server ships default product/application names. Embedded by OPC-UA honeypots and soft servers. |
+| pymodbus | ICS protocol library | Python Modbus library; example server ships a default MEI vendor identity. Embedded by Modbus honeypots and soft-PLCs. |
+| bacnet-stack | ICS protocol library | BACnet reference stack (SourceForge); demo device ships default model/object names. Embedded by BACnet honeypots and DIY BACnet traps. |
+| libiec61850 | ICS protocol library | IEC 61850 (MMS) reference library; ships a default IED identity. Packaged/embedded by the GridPot honeypot. |
+
+## Signatures (9 total)
+
+A signature keys on an implementation-default identity string that a genuine field
+device would not emit but that a specific honeypot / demo / reference-library
+implementation leaves at its default. **A single signature match is, on its own,
+sufficient for a HIGH-confidence label.** Two are adopted from Mladenov et al.
+(S7comm and ATG, plus the snap7 default) and the rest are contributed by this work,
+spanning four additional protocols (OPC-UA, BACnet, Modbus, MMS) plus one
+capability-based rule.
+
+| # | Signature / rule | Source | Protocol | Found in | Passive field(s) | Why it is strong evidence |
+|---|------------------|--------|----------|----------|------------------|---------------------------|
+| B1 | `s7_conpot_default` | Adopted | S7comm | Conpot | `s7.plant_id`, `s7.serial_number` | `plant_id`='Mouser Factory' and `serial_number`='88111222' are Conpot's unmodified S7 template defaults; a genuine CPU never emits them. |
+| B2 | `s7_snap7_default` | Adopted | S7comm | snap7 | `s7.system`, `s7.serial_number`, `s7.reserved_for_os` | `system`='SNAP7-SERVER', `serial_number`='S C-C2UR28922012', `reserved_for_os`='MMC 267FF11F' are the snap7 server-library defaults. |
+| B3 | `atg_gaspot_banner` | Adopted | ATG | GasPot | ATG service banner (raw bytes / `banner_hex`) | Banner with anomalous consecutive newlines (`\n\n\n\n`) or a malformed date format — GasPot artifacts not produced by a real ATG. |
+| 1 | `SIG_opcua_freeopcua` | This work | OPC-UA | FreeOpcUa (python-opcua) | `opc_ua.endpoints[].server.application_uri` / `product_uri` | URI left at the SDK default (`urn:freeopcua:python:server`). A real PLC does not run this pure-Python library; the unchanged example URN marks a demo server. |
+| 2 | `SIG_bacnet_stackdemo` | This work | BACnet | bacnet-stack (demo device) | `bacnet.model_name`, `bacnet.object_name` | `model_name`='GNU' or `object_name`='SimpleServer' — the reference stack's demo identity. A shipped product carries the manufacturer's own names. |
+| 3 | `SIG_bacnet_id_name_mismatch` | This work | BACnet | Capability-based | `bacnet.vendor_id` vs `bacnet.vendor_name` | A registered ASHRAE vendor NAME paired with a vendor ID the registry assigns to a DIFFERENT organization. This pairing is spec-impossible for a certified device. |
+| 4 | `SIG_modbus_pymodbus` | This work | Modbus | pymodbus (example server) | `modbus.mei_response.objects.vendor` / `product_code` / `product_name` | MEI vendor left at the pymodbus example default ('Pymodbus'). A real device reports its true manufacturer. (Confirmed live: probed hosts returned `vendor_name`='Pymodbus'.) |
+| 5 | `SIG_mms_libiec61850` | This work | MMS | libiec61850 / GridPot | `mms.vendor`, `mms.model` | IED identity left at the IEC 61850 reference-library default (`vendor` contains 'libiec61850' / `model`='LIBIEC61850'). A real relay reports its own vendor. |
+| 6 | `SIG_mms_placeholder` | This work | MMS | Unconfigured template / emulator | `mms.vendor` | MMS vendor left as the literal string 'vendor' — the field name used as its own value. No real IED identifies itself this way. |
+
+## Host-of-interest indicators (15 total)
+
+Unlike a signature, a single indicator is not conclusive; confidence is built from
+combinations. Each indicator is graded **STRONG** or **WEAK**. The word WEAK
+(rather than "medium") is used deliberately so that the indicator *strength* is
+never confused with the final MEDIUM confidence *label*: a STRONG indicator
+captures a state that is physically or specification-impossible for a genuine,
+productively-operated device, so on its own it is enough for a MEDIUM label; a WEAK
+indicator captures a suspicious state that still has a plausible innocent
+explanation, so it needs a second independent metric to reach MEDIUM. Two
+indicators are adopted from Mladenov et al. (P1, P2) and thirteen (A–K, N, P) are
+contributed by this work.
+
+| # | Indicator | Source | Passive field(s) | Grade | Reason for the grade |
+|---|-----------|--------|------------------|-------|----------------------|
+| P1 | `network_type` | Adopted | IPInfo `as.type` & `company.type` | STRONG (hosting) / WEAK (education) | Genuine industrial devices are implausible in hosting/datacenter space (STRONG); academic residence is only suggestive (WEAK). |
+| P2 | `open_port_count` | Adopted | number of exposed services | STRONG (>30) / WEAK (>10) | >30 exposed ports is extremely implausible for a real PLC (STRONG); a merely elevated count (>10) is suggestive only (WEAK). |
+| A | `A_vendor_conflict` | This work | native vendor identities across `s7` / `modbus` / `eip` (vs BACnet vendor) | STRONG (≥2 native brands) / WEAK (single native) | Two different native control-stack vendors on one host is physically impossible (STRONG); a single native brand contradicted only by BACnet/supervisor data is weaker (WEAK). |
+| B | `B_template_id` | This work | `s7.serial_number`, `s7.memory_serial_number`, `eip.identity.serial_number` | STRONG | A placeholder token, or a genuine serial reused as a shared template identifier. A truly unique serial should not recur. |
+| C | `C_templated_deploy` | This work | per-(object,fingerprint) cluster size + `autonomous_system.asn` Shannon entropy + IPInfo `as.type` | STRONG (n≥50 & entropy≤1.0) / WEAK (n≥20 & entropy≤1.5) | A large byte-identical deployment with very low AS diversity, concentrated in hosting space, is near-impossible for a real fleet (STRONG); a looser cluster is suggestive (WEAK). Cellular/eyeball ISPs are excluded so real SIM fleets are not caught. |
+| D | `D_modbus_placeholder` | This work | `modbus.mei_response.objects.vendor`, `product_code` | STRONG (both placeholder) / WEAK (one) | Both fields at the Conpot placeholder ('Generic Vendor' + 'MODBUS-001') is conclusive (STRONG); only one is weaker (WEAK). |
+| E | `E_proto_implausible` | This work | set of native ICS protocols present + `eip.identity.vendor_id` | STRONG (≥4 native protocols) / WEAK (exactly 3, or ≥2 cross-vendor families) | A single device natively speaking ≥4 unrelated vendor stacks is physically impossible (STRONG); 3, or a cross-vendor pair, is implausible but conceivable behind a gateway (WEAK). Omron FINS+EtherNet/IP is whitelisted. |
+| F | `F_serial_clone` | This work | `s7.serial_number` / `s7.memory_serial_number` / `eip.identity.serial_number` across ASNs | STRONG (≥3 ASNs) / WEAK (2 ASNs) | The same unique hardware serial in ≥3 independent ASNs is physically impossible = a cloned emulator image (STRONG); 2 ASNs is weaker (WEAK). |
+| G | `G_opcua_degenerate` | This work | `opc_ua.max_chunk_size` | WEAK | `max_chunk_size`≤1 violates the OPC-UA spec floor (8192), but a constrained embedded stack could conceivably emit it. |
+| H | `H_bacnet_placeholder` | This work | `bacnet.description`, `bacnet.location` | WEAK | Literal template default ('Device Description' / 'Device Location') or `location`='localhost' — commissioning laziness a real device could also exhibit. |
+| I | `I_opcua_sdk_default` | This work | `opc_ua.endpoints[].server.application_uri` / `product_uri` / `application_name` | WEAK | open62541 / node-opcua / UA-sample default identity. These SDKs are also embedded in genuine products, so a hit cannot be standalone HIGH — weak by design. |
+| J | `J_bacnet_reserved_id` | This work | `bacnet.vendor_id` | WEAK | An ASHRAE-reserved vendor id (555/666/777/888/911/999/1111) implies a non-conformant device, but a cheap device could squat such an id. |
+| K | `K_colocation_cluster` | This work | `autonomous_system.asn` + host /24 prefix + `product_uri` / `object_name` | WEAK | Same AS and same /24 co-location cluster. Network proximity alone has legitimate explanations (a single-site fleet). |
+| N | `N_eip_services_no_identity` | This work | `eip.services[].service_name` (=COMMUNICATIONS) and absence of `eip.identity` | WEAK | Answers EtherNet/IP ListServices but returns no ListIdentity — a frame-imitating stub; incomplete-but-genuine stacks can exist (usually pairs with E). |
+| P | `P_opcua_loopback_endpoint` | This work | `opc_ua.endpoints[].endpoint_url` | WEAK | EndpointUrl advertises a loopback/wildcard address (localhost / 127.0.0.1 / 0.0.0.0 / ::1) a remote client cannot use — a commissioning omission a real server could also leave. |
+
 ## Pipeline overview
 
 The detection is a **single unified pipeline**: every ICS host in the full
@@ -34,8 +117,8 @@ Run in order:
 |------|--------|---------|
 | 1 | `paginate_all.py` | Retrieve the full ICS population from the Censys Platform API (paginated). |
 | 2 | `enrich_ipinfo.py` | Add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). |
-| 3 | `deep_indicators.py` | **The unified classifier.** Defines all 9 signatures and all 13 new host-of-interest indicators (A–K, N, P), folds in the adopted signals via `paper_signals()`, scores every ICS host in a single pass over the full population, and writes `deep_findings.csv`. |
-| 4 | `honeypot_analysis.py` | Reproduce the paper's Section-6 analyses on the resulting honeypot set (figures + `analysis_stats.json`). |
+| 3 | `deep_indicators.py` | **The unified classifier.** Defines this work's new detectors and scores every ICS host in a single pass over the full population, against the complete pool of **9 signatures** and **15 host-of-interest indicators** (the 13 new ones, A–K, N and P, plus the 2 adopted network metrics folded in via `paper_signals()`), and writes `deep_findings.csv`. |
+| 4 | `honeypot_analysis.py` | Characterises the flagged (HIGH+MEDIUM) honeypot set against the full ICS population and renders the result charts. It computes the protocol mix, the per-country host counts and the honeypot proportion per country, the autonomous-system and AS/business-type breakdown, the open-port-count distribution (CDF), and the multi-protocol distribution. Outputs are written as `.png` charts (150 dpi) under `fig_analysis/` together with an `analysis_stats.json` summary of the underlying numbers. |
 
 Supporting module (imported by the pipeline, not a separate step):
 
@@ -45,7 +128,7 @@ Optional read-only active-probing validation:
 
 | Script | Purpose |
 |--------|---------|
-| `select_active_probe_candidates.py` | Rank residual hosts for active probing. |
+| `select_active_probe_candidates.py` | Rank candidate hosts for active probing. |
 | `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands). |
 | `correlate_active_passive.py` | Correlate active ground-truth with passive Censys fields to discover missed indicators. |
 | `probe_playbook.txt` | Read-only probe playbook (authorized targets only). |
