@@ -64,7 +64,7 @@ H) BACNET TEMPLATE PLACEHOLDER
 I) OPC-UA SDK DEFAULT IDENTITY  (SPLIT INTO TWO CLASSES)
    The paper used snap7's SDK-hardcoded default ('SNAP7-SERVER') and conpot's
    'Mouser Factory'/'88111222' defaults as SIGNATURES: a default string alone =>
-   HIGH (no second metric required). We apply the same principle to the OPC-UA
+   HIGH (no second metric required). The same principle is applied to the OPC-UA
    implementations the paper did not scan, BUT not every SDK default is equally
    reliable:
      * FreeOpcUa (python-opcua) 'urn:freeopcua:python:server' /
@@ -104,10 +104,10 @@ Also part of the set: A) vendor-conflict, B) template-ID (defined in this module
 
 --------------------------------------------------------------------------------
 CONFIDENCE (the unified two-tier model; the paper signals join the same pool):
-  HIGH   = any signature fires (our SIG_* OR the adopted conpot/snap7/gaspot).
-  MEDIUM = one STRONG indicator (our STRONG host-of-interest OR the adopted
+  HIGH   = any signature fires (the new SIG_* OR the adopted conpot/snap7/gaspot).
+  MEDIUM = one STRONG indicator (a new STRONG host-of-interest OR the adopted
            hosting AS-type / >30 open ports), OR at least two WEAK indicators
-           (our WEAK host-of-interest + the adopted education / >10 open ports).
+           (a new WEAK host-of-interest + the adopted education / >10 open ports).
   LOW    = a single WEAK indicator alone (a host of interest, not a honeypot).
 Every ICS host in the full population is scored once against this combined pool.
 Because the adopted signals are retained at their own tiers, the model is
@@ -1069,13 +1069,13 @@ def indicator_P(r):
 
 
 # ---------------------------------------------------------------------------
-# UNIFIED MODEL: the paper's signals ALSO join our scoring pool (user decision,
-# 20 Aug). The paper signals enter the pool at their own tiers:
-#   - signature (conpot/snap7/gaspot)          => HIGH layer (like our SIG_*)
-#   - hosting (as/company) OR >30 ports        => standalone-MEDIUM (like our STRONG)
-#   - education OR >10 ports                    => weak host-of-interest (like our MEDIUM)
+# UNIFIED MODEL: the paper's signals ALSO join the scoring pool. The paper
+# signals enter the pool at their own tiers:
+#   - signature (conpot/snap7/gaspot)          => HIGH layer (like the new SIG_*)
+#   - hosting (as/company) OR >30 ports        => standalone-MEDIUM (like a new STRONG)
+#   - education OR >10 ports                    => weak host-of-interest (like a new WEAK)
 # The model is thus MONOTONE: no host the paper called a honeypot is ever demoted;
-# the paper tier is a FLOOR and our signals can only push upward.
+# the paper tier is a FLOOR and the new signals can only push upward.
 # ---------------------------------------------------------------------------
 _PAPER_SIGS = {"honeypot_defaults_conpot", "honeypot_defaults_snap7",
                "gaspot_newlines", "gaspot_date"}
@@ -1097,8 +1097,8 @@ def paper_signals(r):
     """Maps the paper signals to the layers of the unified model.
     Returns: (paper_sig:set, paper_strong:set, paper_weak:set)
       paper_sig    = signature (=> HIGH)
-      paper_strong = hosting / >30 ports (=> standalone MEDIUM, like our STRONG)
-      paper_weak   = education / >10 ports (=> weak metric, like our MEDIUM)
+      paper_strong = hosting / >30 ports (=> standalone MEDIUM, like a new STRONG)
+      paper_weak   = education / >10 ports (=> weak metric, like a new WEAK)
     """
     _, indications = classify_record(r)
     ind = set(indications)
@@ -1200,12 +1200,12 @@ def main():
         pm = paper_metrics(r)
         # --- UNIFIED MODEL: the paper signals also join the pool ---
         paper_sig, paper_strong, paper_weak = paper_signals(r)
-        # signature layer = our SIG_* + the paper signatures (conpot/snap7/gaspot)
+        # signature layer = the new SIG_* + the paper signatures (conpot/snap7/gaspot)
         has_signature = bool(signatures) or bool(paper_sig)
-        # standalone-MEDIUM STRONG pool = our STRONG host-of-interest +
+        # standalone-MEDIUM STRONG pool = the new STRONG host-of-interest +
         #   the paper hosting/>30-port (the paper's direct-MEDIUM signals)
         hoi_strong = any(g == "STRONG" for g, _ in triggered.values()) or bool(paper_strong)
-        # weak metric pool = our MEDIUM host-of-interest + the paper weak signals
+        # weak metric pool = the new WEAK host-of-interest + the paper weak signals
         #   (education / >10 ports)
         weak_metrics = (sum(1 for g, _ in triggered.values() if g != "STRONG")
                         + len(paper_weak))
@@ -1216,9 +1216,9 @@ def main():
             continue
 
         # --- UNIFIED PAPER+OURS MODEL (monotone; the paper tier is a floor) ---
-        # HIGH  = signature (our SIG_* OR the paper conpot/snap7/gaspot)
-        # MEDIUM= standalone STRONG (our STRONG OR the paper hosting/>30-port),
-        #         or >=2 weak metrics (our MEDIUM + the paper education/>10-port)
+        # HIGH  = signature (the new SIG_* OR the paper conpot/snap7/gaspot)
+        # MEDIUM= standalone STRONG (a new STRONG OR the paper hosting/>30-port),
+        #         or >=2 weak metrics (a new WEAK + the paper education/>10-port)
         # LOW   = a single weak metric
         if has_signature:
             conf = "HIGH"
@@ -1229,12 +1229,12 @@ def main():
         else:
             conf = "LOW"
 
-        # DIRECTLY HIGH thanks ONLY to one of our new signatures (not a paper signature):
+        # DIRECTLY HIGH thanks ONLY to one of the new signatures (not a paper signature):
         if signatures and not paper_sig:
             sig_high += 1
 
         # The paper alone would have rated this host LOW (only 1 weak paper metric,
-        # 0 paper-STRONG/signature); our indicator(s) lifted it to MEDIUM+.
+        # 0 paper-STRONG/signature); the new indicator(s) lifted it to MEDIUM+.
         paper_alone_high = bool(paper_sig) or bool(paper_strong)
         paper_alone_weak = len(paper_weak)
         if (not paper_alone_high and conf in ("MEDIUM", "HIGH")

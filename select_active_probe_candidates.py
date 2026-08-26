@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Cellular / eyeball / IoT-SIM carrier AS-name keywords. Batches with L, M and
 # batch10 proved these ASNs are a false-positive trap: real cellular Modbus/EIP
-# gateways behind CGNAT reproduce our single-metric "honeypot" signatures
+# gateways behind CGNAT reproduce the single-metric "honeypot" signatures
 # (exc_type=11, shared default socket_addr, empty serial-side) as LEGITIMATE
 # behavior. Honeypots live on hosting/transit (cloud), not on SIM fleets.
 # --exclude-cellular drops these so active-probe budget targets probable hits.
@@ -86,7 +86,7 @@ def load_bacnet_unique_registry(path: str):
 
 
 def probe_catalog():
-    # Read-only, low-impact protocol probes user can run from a controlled scanner box.
+    # Read-only, low-impact protocol probes that can be run from a controlled scanner box.
     return {
         "S7": "S7_READONLY",
         "MODBUS": "MODBUS_READONLY",
@@ -141,7 +141,7 @@ def main():
     top_n = int(arg("--top", "100"))
     none_only = arg("--none-only", "0") in ("1", "true", "yes")
     low_only = arg("--low-only", "0") in ("1", "true", "yes")
-    # --tcp-only: keep only hosts carrying a TCP ICS protocol we can actively
+    # --tcp-only: keep only hosts carrying a TCP ICS protocol that can be actively
     # probe (S7/MODBUS/EIP/OPC_UA). Avoids UDP-only BACnet/FINS-placeholder hosts
     # that came back 100% dead in batch7 (verified network path OK).
     tcp_only = arg("--tcp-only", "0") in ("1", "true", "yes")
@@ -220,7 +220,7 @@ def main():
         score = 0
 
         # Existing LOW signals. Paper metrics (paper_many_open_ports,
-        # paper_as_education) and our A-M indicators are ONE unified
+        # paper_as_education) and the A-M indicators are ONE unified
         # host-of-interest set -- the pipeline scores them identically. A LOW
         # host with a single paper metric is an equally valid upgrade candidate.
         if row:

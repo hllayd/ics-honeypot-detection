@@ -4,7 +4,7 @@ official repository of Mladenov et al. "All that Glitters is not Gold"
 (EuroS&P 2025, github.com/martinmladenov/ICS-Honeypots).
 
 Original pipeline: 3_add_indication_labels.py + 4_classify.py + parameters.py.
-This port deviates from the original at ONLY ONE point (by user request):
+This port deviates from the original at ONLY ONE point:
   1) Input format: instead of the Censys Search API (v2) it consumes the Censys
      Platform API (v3) => fields such as host['s7'], host['atg'],
      host['open_port_count'] are derived from

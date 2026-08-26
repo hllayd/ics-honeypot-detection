@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Correlate ACTIVE probe ground-truth with PASSIVE Censys fields.
 
-Goal (user's original strategy): use active probing to DISCOVER passive
-indicators we missed. For each probed host we now know its live reality
-(REAL_DEVICE / DEAD / SUSPECT). We pull the SAME host's full passive Censys
-record from the residual dump and look for passive fields that separate the
-classes -> candidate new passive indicators.
+Goal: use active probing to DISCOVER passive indicators the passive
+pipeline missed. For each probed host its live reality is now known
+(REAL_DEVICE / DEAD / SUSPECT). The SAME host's full passive Censys
+record is pulled from the residual dump and inspected for passive fields
+that separate the classes -> candidate new passive indicators.
 
 Inputs
 - batch1_results.json, batch2_results.json (active probe outcomes)
