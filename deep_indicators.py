@@ -100,7 +100,7 @@ NO IDENTITY SIGNATURE IS POSSIBLE; the paper used a banner-format anomaly, the
 right approach), GridPot (wraps Conpot + libiec61850 => its identity is the Conpot
 template + the libiec61850 signature).
 
-Also reused: A) vendor-conflict, B) template-ID (from indicators.py).
+Also part of the set: A) vendor-conflict, B) template-ID (defined in this module).
 
 --------------------------------------------------------------------------------
 CONFIDENCE (the unified two-tier model; the paper signals join the same pool):
@@ -124,10 +124,323 @@ import sys
 from collections import Counter, defaultdict
 from math import log2
 
-from indicators import host_labels, indicator_A, indicator_B, protocols_of
 from paper_original_port import classify_record
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+# ===========================================================================
+# SHARED HELPERS + INDICATORS A and B
+# ---------------------------------------------------------------------------
+# Indicators A (vendor conflict) and B (template/low-entropy identifier) are two
+# of this work's thirteen host-of-interest indicators (A-K, N, P). They live in
+# this same module alongside C-K, N, P so that the full indicator set is defined
+# in one place and scored in the single unified pass in main().
+# ===========================================================================
+def host_labels(services):
+    out = set()
+    for s in services:
+        labs = s.get("labels")
+        if isinstance(labs, list):
+            for L in labs:
+                v = L.get("value") if isinstance(L, dict) else L
+                if v:
+                    out.add(str(v).upper())
+    return out
+
+
+def protocols_of(r):
+    return sorted({s.get("protocol", "") for s in r.get("services", []) if s.get("protocol")})
+
+
+# ---------------------------------------------------------------------------
+# INDICATOR A: vendor inconsistency
+# ---------------------------------------------------------------------------
+# Reduces manufacturer strings to a canonical brand. Only UNAMBIGUOUS brands;
+# anything unclear -> None (to keep false positives low). Because the results are
+# manually reviewed, the evidence (source=brand) is written to the CSV.
+BRAND_KW = [
+    ("SIEMENS", ("SIEMENS", "SIMATIC")),
+    ("SCHNEIDER", ("SCHNEIDER", "MODICON", "TELEMECANIQUE", "TSX", "BMX")),
+    ("ROCKWELL", ("ROCKWELL", "ALLEN-BRADLEY", "ALLEN BRADLEY", "ALLEN_BRADLEY")),
+    ("TRIDIUM", ("TRIDIUM", "NIAGARA")),
+    ("WAGO", ("WAGO",)),
+    ("BECKHOFF", ("BECKHOFF", "TWINCAT")),
+    ("ABB", ("ABB",)),
+    ("MITSUBISHI", ("MITSUBISHI", "MELSEC")),
+    ("OMRON", ("OMRON",)),
+    ("PHOENIX", ("PHOENIX CONTACT", "PHOENIX_CONTACT")),
+    ("MOXA", ("MOXA",)),
+    ("HMS", ("HMS", "ANYBUS")),
+    ("DELTA", ("DELTA ELECTRONICS",)),
+    ("GE", ("GENERAL ELECTRIC", "GE FANUC", "GE INTELLIGENT")),
+    ("HONEYWELL", ("HONEYWELL",)),
+    ("EMERSON", ("EMERSON",)),
+    ("YOKOGAWA", ("YOKOGAWA",)),
+    ("BOSCH", ("BOSCH", "REXROTH")),
+    ("HITACHI", ("HITACHI",)),
+    ("PANASONIC", ("PANASONIC",)),
+    ("CODESYS", ("CODESYS", "3S-SMART")),
+    ("UNITRONICS", ("UNITRONICS",)),
+]
+
+
+def brand_from_string(s):
+    if not s:
+        return None
+    u = s.upper()
+    for brand, kws in BRAND_KW:
+        for kw in kws:
+            if kw in u:
+                return brand
+    return None
+
+
+def vendor_signals(r):
+    """List of (brand, source-description) evidence carried by the host.
+
+    Only identity-bearing fields: protocol implication (S7=Siemens proprietary),
+    order-code prefix, and explicit vendor_name fields.
+    """
+    sigs = []  # (brand, source)
+    for s in r.get("services", []):
+        p = s.get("protocol")
+        # --- S7: Siemens proprietary protocol ---
+        if "s7" in s:
+            s7 = s["s7"] or {}
+            mid = (s7.get("module_id") or "").strip()
+            cop = (s7.get("copyright") or "")
+            b = None
+            if mid[:4].upper() in ("6ES7", "6ED1", "6AG1", "6GK7"):
+                b = "SIEMENS"
+                sigs.append((b, f"S7.order_code={mid}"))
+            elif brand_from_string(cop):
+                b = brand_from_string(cop)
+                sigs.append((b, f"S7.copyright={cop.strip()[:40]}"))
+            else:
+                # the S7comm protocol on its own implies Siemens
+                sigs.append(("SIEMENS", "S7.protocol"))
+        # --- Modbus MEI vendor ---
+        if "modbus" in s:
+            o = ((s["modbus"] or {}).get("mei_response") or {}).get("objects") or {}
+            for fld in ("vendor", "product_name", "model_name", "user_application_name"):
+                b = brand_from_string(o.get(fld))
+                if b:
+                    sigs.append((b, f"MODBUS.{fld}={str(o.get(fld)).strip()[:40]}"))
+                    break
+        # --- EtherNet/IP identity ---
+        if "eip" in s:
+            idn = (s["eip"] or {}).get("identity") or {}
+            b = brand_from_string(idn.get("vendor_name")) or brand_from_string(idn.get("product_name"))
+            if b:
+                sigs.append((b, f"EIP.vendor={str(idn.get('vendor_name')).strip()[:40]}"))
+        # --- BACnet vendor ---
+        if "bacnet" in s:
+            bac = s["bacnet"] or {}
+            b = brand_from_string(bac.get("vendor_name")) or brand_from_string(bac.get("model_name"))
+            if b:
+                sigs.append((b, f"BACNET.vendor={str(bac.get('vendor_name')).strip()[:40]}"))
+        # --- FOX = Niagara/Tridium ---
+        if p == "FOX" or "fox" in s:
+            sigs.append(("TRIDIUM", "FOX.protocol"))
+    return sigs
+
+
+# Maps an evidence source to a "strength kind":
+#   native : the device's OWN control-plane identity (S7/Modbus/EIP) - a strong tell
+#   bacnet : BACnet vendor - can be PROXIED by a supervisor (semi-strong)
+#   supervisor : FOX/Niagara - legitimately aggregates other manufacturers (weak)
+def _source_kind(src):
+    head = src.split(".", 1)[0].upper()
+    if head in ("S7", "MODBUS", "EIP"):
+        return "native"
+    if head == "BACNET":
+        return "bacnet"
+    if head == "FOX":
+        return "supervisor"
+    return "other"
+
+
+def indicator_A(r):
+    """If >=2 conflicting brands: (brands, evidence, strength, strength_reason).
+
+    strength (only STRONG/MEDIUM; the weak GATEWAY class was REMOVED):
+      STRONG  : >=2 brands each from a NATIVE control protocol (S7/Modbus/EIP).
+                A single physical PLC cannot speak two different manufacturers'
+                native stacks.
+      MEDIUM  : single native brand; the others conflict via BACnet vendor.
+    A FOX(supervisor)+BACnet conflict alone (a Niagara proxy can be LEGITIMATE) is
+    IGNORED (returns None) -- it used to be the weak GATEWAY class.
+    """
+    sigs = vendor_signals(r)
+    brands = {b for b, _ in sigs}
+    if len(brands) < 2:
+        return None
+
+    # each brand -> supporting source kinds
+    brand_kinds = defaultdict(set)
+    for b, src in sigs:
+        brand_kinds[b].add(_source_kind(src))
+    native_brands = {b for b, ks in brand_kinds.items() if "native" in ks}
+    has_supervisor = any("supervisor" in ks for ks in brand_kinds.values())
+
+    if len(native_brands) >= 2:
+        strength = "STRONG"
+        why = f"two+ native control-protocol conflict: {sorted(native_brands)}"
+    elif has_supervisor and all(
+            brand_kinds[b] <= {"supervisor", "bacnet"} for b in brands):
+        # FOX supervisor + BACnet: could be a legitimate proxy/gateway => weak, IGNORE
+        return None
+    else:
+        strength = "MEDIUM"
+        why = "single native brand; the others come from bacnet/supervisor sources"
+
+    ev = []
+    seen = set()
+    for b, src in sigs:
+        if b not in seen:
+            ev.append(f"{b}<={src}")
+            seen.add(b)
+    return sorted(brands), ev, strength, why
+
+
+# ---------------------------------------------------------------------------
+# INDICATOR B: templated / sequential / low-entropy device identifier
+# ---------------------------------------------------------------------------
+PLACEHOLDERS = {
+    "DEADBEEF", "CAFEBABE", "BAADF00D", "0BADF00D", "DEADC0DE", "FEEDFACE",
+    "8BADF00D", "DEADBABE", "FACEFEED", "CAFED00D", "BADDCAFE",
+    "12345678", "01234567", "87654321", "76543210", "1234567890",
+    "00000000", "11111111", "FFFFFFFF", "AAAAAAAA", "55555555",
+    "01020304", "0102030405", "0011223344", "AABBCCDD", "DEADBEEFDEADBEEF",
+}
+
+
+def _hexval(ch):
+    ch = ch.lower()
+    if ch.isdigit():
+        return ord(ch) - 48
+    if "a" <= ch <= "f":
+        return 10 + ord(ch) - 97
+    return None
+
+
+def max_consecutive_run(core):
+    """Longest consecutive +1/-1 nibble run (e.g. 123456 -> 6)."""
+    best = cur = 1
+    d = 0
+    for i in range(1, len(core)):
+        a, b = _hexval(core[i - 1]), _hexval(core[i])
+        if a is None or b is None:
+            cur = 1
+            d = 0
+            continue
+        step = b - a
+        if step in (1, -1) and (d == 0 or d == step):
+            cur += 1
+            d = step
+            best = max(best, cur)
+        else:
+            cur = 2 if step in (1, -1) else 1
+            d = step if step in (1, -1) else 0
+    return best
+
+
+def byte_pair_sequential(core):
+    """Whether 2-char hex byte groups such as 0102030405 form an arithmetic
+    sequence."""
+    if len(core) < 6 or len(core) % 2:
+        return False
+    try:
+        bs = [int(core[i:i + 2], 16) for i in range(0, len(core), 2)]
+    except ValueError:
+        return False
+    if len(bs) < 3:
+        return False
+    diffs = {bs[i + 1] - bs[i] for i in range(len(bs) - 1)}
+    return diffs == {1} or diffs == {-1}
+
+
+def score_identifier(raw):
+    """List of suspicious-pattern reasons for an ID string (empty = clean)."""
+    if raw is None:
+        return []
+    s = str(raw).strip()
+    core = "".join(ch for ch in s if ch.isalnum())
+    if len(core) < 4:
+        return []
+    reasons = []
+    up = core.upper()
+    if up in PLACEHOLDERS:
+        reasons.append(f"placeholder_token({up})")
+    else:
+        for tok in PLACEHOLDERS:
+            if len(tok) >= 6 and tok in up:
+                reasons.append(f"contains_placeholder({tok})")
+                break
+    if len(set(up)) == 1:
+        reasons.append(f"all_same_char({up[0]})")
+    run = max_consecutive_run(core)
+    if run >= max(6, int(0.8 * len(core))):
+        reasons.append(f"sequential_run({run})")
+    if byte_pair_sequential(core):
+        reasons.append("byte_pair_sequence")
+    ent = shannon(Counter(core))
+    if len(core) >= 8 and ent < 1.0:
+        reasons.append(f"low_entropy({ent:.2f}b/char)")
+    return reasons
+
+
+def identifier_candidates(r):
+    """(source_field, raw_value) ID candidates from a host. Only SERIAL/ID fields;
+    legitimately structured fields such as order-code / model / product-name are
+    EXCLUDED."""
+    out = []
+    for s in r.get("services", []):
+        if "s7" in s:
+            s7 = s["s7"] or {}
+            for fld in ("serial_number", "memory_serial_number", "plant_id",
+                        "reserved_for_os"):
+                v = s7.get(fld)
+                if v not in (None, ""):
+                    out.append((f"s7.{fld}", v))
+        if "eip" in s:
+            idn = (s["eip"] or {}).get("identity") or {}
+            v = idn.get("serial_number")
+            if isinstance(v, int):
+                # EIP serial number is an integer -> try both 8-hex and decimal
+                out.append(("eip.serial_number", f"{v:08X}"))
+        if "bacnet" in s:
+            bac = s["bacnet"] or {}
+            v = bac.get("instance_number")
+            # only watch suspiciously-round/low instance numbers
+            if isinstance(v, int) and v in (0, 1, 1234, 12345, 123456, 1111, 9999):
+                out.append(("bacnet.instance_number", str(v)))
+    return out
+
+
+def indicator_B(r):
+    """List of (source, raw, reasons, strength) (empty = indicator did not fire).
+
+    strength (only STRONG; the weak class was REMOVED):
+      STRONG : (a) a placeholder token always; OR (b) a genuine SERIAL-NUMBER field
+               (s7.serial_number / s7.memory_serial_number / eip.serial_number).
+               A manufacturer serial number is by definition high-entropy; being
+               sequential/low-entropy is nearly impossible => a strong decoy signal.
+    Fields other than serial/placeholder (bacnet.instance_number / s7.plant_id /
+    reserved_for_os) can also appear in legitimate deployments => weak, IGNORED.
+    """
+    STRONG_FIELDS = {"s7.serial_number", "s7.memory_serial_number", "eip.serial_number"}
+    hits = []
+    for src, raw in identifier_candidates(r):
+        rs = score_identifier(raw)
+        if rs:
+            is_placeholder = any(x.startswith(("placeholder_token", "contains_placeholder"))
+                                 for x in rs)
+            if is_placeholder or src in STRONG_FIELDS:
+                hits.append((src, raw, rs, "STRONG"))
+            # otherwise weak => IGNORE (not appended to hits)
+    return hits
 
 
 def _arg(name, default):

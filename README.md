@@ -34,13 +34,12 @@ Run in order:
 |------|--------|---------|
 | 1 | `paginate_all.py` | Retrieve the full ICS population from the Censys Platform API (paginated). |
 | 2 | `enrich_ipinfo.py` | Add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). |
-| 3 | `deep_indicators.py` | **The unified classifier.** Scores every ICS host in a single pass over the full population, applying the adopted signals + all new signatures and indicators together, and writes `deep_findings.csv`. |
+| 3 | `deep_indicators.py` | **The unified classifier.** Defines all 9 signatures and all 13 new host-of-interest indicators (A–K, N, P), folds in the adopted signals via `paper_signals()`, scores every ICS host in a single pass over the full population, and writes `deep_findings.csv`. |
 | 4 | `honeypot_analysis.py` | Reproduce the paper's Section-6 analyses on the resulting honeypot set (figures + `analysis_stats.json`). |
 
-Supporting modules (imported by the pipeline, not separate steps):
+Supporting module (imported by the pipeline, not a separate step):
 
 - `paper_original_port.py` — faithful port of the adopted Mladenov et al. classifier; its signals are folded into the unified pool via `paper_signals()`.
-- `indicators.py` — defines the new passive indicators A (vendor conflict) and B (template identifier) used by the classifier. Its `__main__` is an optional standalone A/B diagnostic.
 
 Optional read-only active-probing validation:
 
