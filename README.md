@@ -124,14 +124,40 @@ Supporting module (imported by the pipeline, not a separate step):
 
 - `paper_original_port.py` — faithful port of the adopted Mladenov et al. classifier; its signals are folded into the unified pool via `paper_signals()`.
 
-Optional read-only active-probing validation:
+### Optional read-only active-probing validation
+
+The passive pipeline above assigns confidence purely from Censys scan data; it
+never touches the hosts. The active-probing stage is a **separate, optional
+ground-truth check** that exists for two reasons:
+
+1. **Validate the passive verdicts.** A passive HIGH/MEDIUM label is an inference
+   from indirect fields. By issuing a small number of protocol-native, read-only
+   queries to a *sample* of flagged hosts, the true device identity (vendor,
+   model, serial, endpoint set, banner behaviour) can be observed directly and
+   compared with what the passive classifier predicted. This distinguishes real
+   detections from false positives and turns "likely honeypot" into a
+   confirmed/rejected judgement on that sample — i.e. it estimates the passive
+   method's precision without having to trust it blindly.
+2. **Discover new passive indicators.** Some honeypot tells are only visible in
+   fields that a wide-scan platform does not routinely collect (e.g. MEI object
+   blocks, OPC-UA endpoint matrices, IEC-104 U-frame timing). Probing confirmed
+   hosts reveals these artifacts; `correlate_active_passive.py` then checks which
+   of them *also* have a passive shadow in the Censys corpus, so they can be
+   promoted into new purely-passive signatures/indicators for the next run. In
+   other words, active probing is used to *bootstrap* better passive rules, not as
+   the detection method itself.
+
+The stage is deliberately **read-only**: every probe is a query or status read;
+no write, control, or function-changing command is ever issued, and it is run only
+against authorized targets. The result never changes a host's state, so it is safe
+to run against production-adjacent ICS.
 
 | Script | Purpose |
 |--------|---------|
-| `select_active_probe_candidates.py` | Rank candidate hosts for active probing. |
-| `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands). |
-| `correlate_active_passive.py` | Correlate active ground-truth with passive Censys fields to discover missed indicators. |
-| `probe_playbook.txt` | Read-only probe playbook (authorized targets only). |
+| `select_active_probe_candidates.py` | Rank candidate hosts (from the passive findings) into a probe shortlist, tagging each with the protocols/ports to query. |
+| `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands) that runs the shortlisted queries and records the raw + parsed identity fields. |
+| `correlate_active_passive.py` | Correlate the active ground-truth with the passive Censys fields to confirm verdicts and surface new candidate passive indicators. |
+| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot tells to look for (authorized targets only). |
 
 ## Requirements
 
