@@ -18,7 +18,7 @@ and two coarse network metrics (open-port count and AS type). This project widen
 the detection surface along several independent axes:
 
 - **A broader honeypot/implementation study to mine new signatures.** Rather than
-  reusing the paper's two signatures, a wide corpus of ICS honeypots and the open
+  reusing the paper's three signatures, a wide corpus of ICS honeypots and the open
   protocol libraries they embed was reviewed (see *Honeypot corpus examined*), and
   each was inspected for an implementation-default identity a genuine field device
   would never emit. This yields **six new signatures across four additional
@@ -86,8 +86,9 @@ open62541, node-opcua, pymodbus, bacnet-stack, libiec61850).
 A signature keys on an implementation-default identity string that a genuine field
 device would not emit but that a specific honeypot / demo / reference-library
 implementation leaves at its default. **A single signature match is, on its own,
-sufficient for a HIGH-confidence label.** Two are adopted from Mladenov et al.
-(S7comm and ATG, plus the snap7 default) and the rest are contributed by this work,
+sufficient for a HIGH-confidence label.** Three are adopted from Mladenov et al.
+(two S7comm defaults — conpot and snap7 — and one ATG banner) and the rest are
+contributed by this work,
 spanning four additional protocols (OPC-UA, BACnet, Modbus, MMS) plus one
 capability-based rule.
 
@@ -139,7 +140,8 @@ contributed by this work.
 The detection is a **single unified pipeline**: every ICS host in the full
 population is scored once, in one pass, against **one combined pool** of
 signatures and host-of-interest indicators. The adopted signals of Mladenov et al.
-(their two signatures and two network metrics) are folded into the *same* pool at
+(their three signatures — conpot/snap7 S7comm defaults and the GasPot ATG banner —
+and two network metrics) are folded into the *same* pool at
 their matching tiers, together with this work's new signatures and indicators.
 The model is monotone — no detection the adopted method alone would make can be
 lost — so there is **no residual pre-filtering step**; paper/Censys detections are
@@ -147,18 +149,18 @@ retained as a floor and reported as part of the combined total.
 
 Two-tier confidence:
 
-- **HIGH** — any signature fires (the two adopted S7comm/ATG signatures **or** any new one).
+- **HIGH** — any signature fires (the three adopted S7comm/ATG signatures **or** any new one).
 - **MEDIUM** — one **STRONG** indicator, **or** two **WEAK** indicators. (Adopted metrics join at their tiers: hosting AS-type and >30 open ports are STRONG; education AS-type and >10 open ports are WEAK.)
 - **LOW** — a single WEAK indicator alone (a host of interest, not counted as a honeypot).
 
 Run in order:
 
-| Step | Script | Purpose |
-|------|--------|---------|
-| 1 | `paginate_all.py` | Retrieve the full ICS population from the Censys Platform API (paginated). |
-| 2 | `enrich_ipinfo.py` | Add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). |
-| 3 | `deep_indicators.py` | **The unified classifier.** Defines this work's new detectors and scores every ICS host in a single pass over the full population, against the complete pool of **9 signatures** and **15 host-of-interest indicators** (the 13 new ones, A–K, N and P, plus the 2 adopted network metrics folded in via `paper_signals()`), and writes `deep_findings.csv`. |
-| 4 | `honeypot_analysis.py` | Characterises the flagged (HIGH+MEDIUM) honeypot set against the full ICS population and renders the result charts. It computes the protocol mix, the per-country host counts and the honeypot proportion per country, the autonomous-system and AS/business-type breakdown, the open-port-count distribution (CDF), and the multi-protocol distribution. Outputs are written as `.png` charts (150 dpi) under `fig_analysis/` together with an `analysis_stats.json` summary of the underlying numbers. |
+| Step | Script | Purpose & Inputs/Outputs |
+|------|--------|--------------------------|
+| 1 | `paginate_all.py` | **Purpose:** retrieve the full ICS population from the Censys Platform API (paginated). **Inputs:** `query.txt` (the Censys query) and the Censys Platform API (`CENSYS_PAT` / `CENSYS_ORG`). **Output:** `population.json` (the full raw ICS host records). |
+| 2 | `enrich_ipinfo.py` | **Purpose:** add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). **Inputs:** `population.json` and the `standard_company.mmdb` IPinfo database. **Output:** `ipinfo_map.json` (`{ ip: {name, domain, type, asn, as_name, as_domain, as_type, country} }`). |
+| 3 | `deep_indicators.py` | **The unified classifier.** Defines this work's new detectors and scores every ICS host in a single pass over the full population, against the complete pool of **9 signatures** and **15 host-of-interest indicators** (the 13 new ones, A–K, N and P, plus the 2 adopted network metrics folded in via `paper_signals()`). **Inputs:** `population.json` (and the adopted logic imported from `paper_original_port.py`). **Output:** `deep_findings.csv` (per-host triggered signatures/indicators + confidence tier). |
+| 4 | `honeypot_analysis.py` | Characterises the flagged (HIGH+MEDIUM) honeypot set against the full ICS population and renders the result charts. It computes the protocol mix, the per-country host counts and the honeypot proportion per country, the autonomous-system and AS/business-type breakdown, the open-port-count distribution (CDF), and the multi-protocol distribution. **Inputs:** `deep_findings.csv`, `population.json`, and `ipinfo_map.json`. **Outputs:** `.png` charts (150 dpi) under `fig_analysis/` together with an `analysis_stats.json` summary of the underlying numbers. |
 
 Supporting module (imported by the pipeline, not a separate step):
 
@@ -192,12 +194,12 @@ no write, control, or function-changing command is ever issued, and it is run on
 against authorized targets. The result never changes a host's state, so it is safe
 to run against production-adjacent ICS.
 
-| Script | Purpose |
-|--------|---------|
-| `select_active_probe_candidates.py` | Rank candidate hosts (from the passive findings) into a probe shortlist, tagging each with the protocols/ports to query. |
-| `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands) that runs the shortlisted queries and records the raw + parsed identity fields. |
-| `correlate_active_passive.py` | Correlate the active ground-truth with the passive Censys fields to confirm verdicts and surface new candidate passive indicators. |
-| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot tells to look for (authorized targets only). |
+| Script | Purpose & Inputs/Outputs |
+|--------|--------------------------|
+| `select_active_probe_candidates.py` | **Purpose:** rank candidate hosts (from the passive findings) into a probe shortlist, tagging each with the protocols/ports to query. **Inputs:** `population.json` and `deep_findings.csv`. **Output:** `active_probe_top100.csv` (the ranked probe shortlist). |
+| `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands) that runs the shortlisted queries and records the raw + parsed identity fields. **Input:** a probe shortlist CSV (e.g. `active_probe_top100.csv`, via `--csv`). **Output:** a results JSON (e.g. `batch1_results.json`, via `--out`). |
+| `correlate_active_passive.py` | Correlate the active ground-truth with the passive Censys fields to confirm verdicts and surface new candidate passive indicators. **Inputs:** the probe results JSONs (`batch1_results.json`, `batch2_results.json`) and `population.json`. **Output:** `active_passive_join.json` (per-host active-vs-passive comparison). |
+| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot tells to look for (authorized targets only). **Input/Output:** documentation only (no data files). |
 
 ## Requirements
 
@@ -214,7 +216,7 @@ to run against production-adjacent ICS.
 $env:CENSYS_PAT = "censys_pat_xxx"
 $env:CENSYS_ORG = "your-org-id"
 
-py paginate_all.py                 # -> pop_all.json
+py paginate_all.py                 # -> population.json
 py enrich_ipinfo.py                # -> ipinfo_map.json
 py deep_indicators.py              # unified classifier -> deep_findings.csv
 py honeypot_analysis.py            # -> figures + analysis_stats.json
