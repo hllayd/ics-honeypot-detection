@@ -1,6 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Reproduce the paper's Section-6 honeypot-set analyses on this work's H+M set.
-Outputs PNG figures + an analysis_stats.json for the report builder."""
+"""Characterise the flagged (HIGH+MEDIUM) honeypot set against the full ICS
+population and render the result charts.
+
+Analyses produced (each is written as a PNG under fig_analysis/ and summarised
+in analysis_stats.json):
+
+  1. Confidence-tier counts (HIGH / MEDIUM / LOW) and the most common protocols
+     among the flagged hosts.                        -> fig61_protocols.png
+  2. Top-15 countries by absolute honeypot count.    -> fig62_country_count.png
+  3. Honeypot proportion per country (flagged / total ICS, countries with
+     >=200 ICS hosts) against the global proportion.  -> fig63_proportion.png
+  4. Top-15 autonomous systems hosting the flagged set.-> fig64_as.png
+  5. IP-range business-type breakdown of the flagged set (IPInfo company.type:
+     hosting / isp / business / education / ...).      -> fig65_biztype.png
+  6. Open-port-count distribution (CDF), flagged hosts vs. unflagged ("real")
+     hosts, with the median for each.                  -> fig65_ports_cdf.png
+  7. Multi-protocol distribution: number of distinct ICS protocols a single
+     flagged host emulates (bucketed 1..6+).           -> fig66_multiproto.png
+  8. Oddballs: the flagged hosts with the largest open-port counts (table only,
+     in analysis_stats.json).
+
+Inputs:  deep_findings_aug20.csv (classifier output), population_aug20.json
+         (full ICS population), ipinfo_map.json (AS/company categories).
+Outputs: PNG charts (150 dpi) under fig_analysis/ + analysis_stats.json.
+"""
 import csv, json, collections, os
 import matplotlib
 matplotlib.use("Agg")
