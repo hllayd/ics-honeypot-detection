@@ -262,20 +262,35 @@ stats["signature_indicator_combinations"] = top_combo
 stats["signature_indicator_singletons"] = single_counter.most_common()
 stats["distinct_combinations"] = len(combo_counter)
 
-# a signal is "adopted" (from Mladenov et al.) if it is a paper network metric
-# or one of the paper signatures; everything else is contributed by this work.
-_ADOPTED = {"paper_hosting", "paper_many_open_ports", "paper_many_open_ports_high",
-            "paper_as_education", "honeypot_defaults_conpot", "honeypot_defaults_snap7",
-            "gaspot_newlines", "gaspot_date"}
+# The adopted method (Mladenov et al.) reaches its HIGH+MEDIUM honeypot verdict
+# using only these signals: two coarse network indicators (with STRONG/WEAK grades)
+# and the ATG/S7 signatures. A combination is "promoted" by this work only when the
+# adopted signals in it would NOT already place the host in the paper's honeypot set,
+# so that the contributed signal is what lifts it in — this is exactly the delta
+# between the paper's 20,005-host set and this work's 22,387-host set.
+_ADOPTED_SIG = {"honeypot_defaults_conpot", "honeypot_defaults_snap7",
+                "gaspot_newlines", "gaspot_date"}
+_ADOPTED_STRONG = {"paper_hosting", "paper_many_open_ports_high"}
+_ADOPTED_WEAK = {"paper_many_open_ports", "paper_as_education"}
 
 
-def is_contributed_signal(s):
-    return s not in _ADOPTED
+def paper_is_honeypot(combo):
+    """Would the adopted method alone label this combination HIGH+MEDIUM?
+    HIGH = any adopted signature; MEDIUM = one STRONG or two WEAK adopted indicators."""
+    parts = set(combo.split(" + "))
+    if parts & _ADOPTED_SIG:
+        return True
+    if parts & _ADOPTED_STRONG:
+        return True
+    if len(parts & _ADOPTED_WEAK) >= 2:
+        return True
+    return False
 
 
-def combo_is_contributed(combo):
-    """True if at least one signal in the combination is contributed by this work."""
-    return any(is_contributed_signal(x) for x in combo.split(" + "))
+def combo_is_promoted(combo):
+    """True when the host is in this work's honeypot set on the strength of a
+    contributed signal and would NOT be flagged by the adopted method alone."""
+    return not paper_is_honeypot(combo)
 
 
 def abbrev_signal(s):
@@ -291,38 +306,41 @@ def abbrev_combo(combo):
 
 
 stats["signature_indicator_combinations_flagged"] = [
-    [c, n, combo_is_contributed(c)] for c, n in top_combo]
+    [c, n, combo_is_promoted(c)] for c, n in top_combo]
 
 # largest at top: keep most_common order, place with explicit y positions so
 # duplicate/near labels can never collapse onto the same row.
 labs = [abbrev_combo(c) for c, _ in top_combo]
 vals = [v for _, v in top_combo]
-contributed = [combo_is_contributed(c) for c, _ in top_combo]
+promoted = [combo_is_promoted(c) for c, _ in top_combo]
 y = list(range(len(vals)))[::-1]  # row 0 at top
 
-C_CONTRIB = "#c0392b"   # combinations that rely on a contributed signal
-C_ADOPTED = "#95a5a6"   # combinations carried purely by the adopted signals
-bar_colors = [C_CONTRIB if c else C_ADOPTED for c in contributed]
+C_PROMOTED = "#c0392b"  # combinations lifted into the honeypot set by our contribution
+C_ADOPTED = "#95a5a6"   # combinations the adopted method would already flag
+bar_colors = [C_PROMOTED if c else C_ADOPTED for c in promoted]
 
 fig, ax = plt.subplots(figsize=(9.5, 6.5))
 ax.barh(y, vals, color=bar_colors)
 ax.set_yticks(y)
 lbl_objs = ax.set_yticklabels(labs, fontsize=8)
 # colour the tick labels to match their bar (same order as labs)
-for tick, c in zip(lbl_objs, contributed):
-    tick.set_color(C_CONTRIB if c else "#333333")
+for tick, c in zip(lbl_objs, promoted):
+    tick.set_color(C_PROMOTED if c else "#333333")
 ax.set_xlim(0, max(vals) * 1.12)
 ax.set_xlabel("H+M honeypot hosts")
 ax.set_title("6.7  Top-20 signature / indicator combinations by host count",
              fontsize=10, loc="right")
-for yi, v, c in zip(y, vals, contributed):
+for yi, v, c in zip(y, vals, promoted):
     ax.text(v + max(vals) * 0.01, yi, f"{v:,}", va="center", fontsize=8,
-            color=C_CONTRIB if c else "#333333")
+            color=C_PROMOTED if c else "#333333")
 from matplotlib.patches import Patch
-ax.legend(handles=[Patch(color=C_CONTRIB, label="relies on a contributed signal"),
-                   Patch(color=C_ADOPTED, label="adopted signals only")],
-          fontsize=8, loc="lower right")
-fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig67_combinations.png", dpi=140); plt.close(fig)
+fig.tight_layout(rect=[0, 0.05, 1, 1])
+fig.legend(handles=[Patch(color=C_PROMOTED,
+                          label="newly promoted to honeypot by a contributed signal"),
+                    Patch(color=C_ADOPTED,
+                          label="already flagged by the adopted method")],
+           fontsize=8, loc="lower center", ncol=2, frameon=False)
+fig.savefig(f"{FIGDIR}/fig67_combinations.png", dpi=140); plt.close(fig)
 
 # =========================================================
 # 6.8 Oddballs: hosts with an unusually large number of open ports
