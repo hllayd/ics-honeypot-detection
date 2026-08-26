@@ -7,9 +7,9 @@ Usage (PowerShell):
     $env:CENSYS_ORG = "12345678-91011-1213"      # Organization ID
     py paginate_all.py
 
-Output: from_papers_all.json  -> {"result": {"total_hits": N, "hits": [...]}}
-This file can be inspected directly with inspect_results.py:
-    py inspect_results.py --file from_papers_all.json
+Output: population.json  -> {"result": {"total_hits": N, "hits": [...]}}
+This is the full population consumed by enrich_ipinfo.py, paper_original_port.py,
+deep_indicators.py and honeypot_analysis.py.
 """
 import json
 import os
@@ -20,11 +20,11 @@ import urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Default: query.txt -> from_papers_all.json
+# Default: query.txt -> population.json
 # For the control set:  py paginate_all.py query_control.txt control_all.json
 _args = [a for a in sys.argv[1:] if not a.startswith("-")]
 QUERY_FILE = os.path.join(HERE, _args[0]) if len(_args) >= 1 else os.path.join(HERE, "query.txt")
-OUT = os.path.join(HERE, _args[1]) if len(_args) >= 2 else os.path.join(HERE, "from_papers_all.json")
+OUT = os.path.join(HERE, _args[1]) if len(_args) >= 2 else os.path.join(HERE, "population.json")
 # Third arg: maximum pages (e.g. 1 to just see total_hits). Otherwise the default.
 _max_pages_override = int(_args[2]) if len(_args) >= 3 else None
 

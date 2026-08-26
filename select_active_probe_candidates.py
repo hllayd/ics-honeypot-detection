@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select top residual hosts for active probing.
+"""Select top low-confidence population hosts for active probing.
 
 Purpose
 - Focus on hosts that are still not HIGH/MEDIUM in passive pipeline (LOW or NONE).
@@ -7,8 +7,8 @@ Purpose
 - Emit top-N candidates with protocol-aware probe bundles.
 
 Inputs (same folder by default)
-- residual_paper17.json
-- deep_findings_paper17.csv
+- population.json          (the full passive Censys population)
+- deep_findings.csv        (classifier output from deep_indicators.py)
 - bacnet_vendor_ids.html (optional but strongly recommended)
 
 Output
@@ -134,8 +134,8 @@ def score_from_low_indicators(ind_set):
 
 
 def main():
-    residual_path = os.path.join(HERE, arg("--residual", "residual_paper17.json"))
-    findings_path = os.path.join(HERE, arg("--findings", "deep_findings_paper17.csv"))
+    population_path = os.path.join(HERE, arg("--population", "population.json"))
+    findings_path = os.path.join(HERE, arg("--findings", "deep_findings.csv"))
     registry_html_path = os.path.join(HERE, arg("--bacnet-registry", "bacnet_vendor_ids.html"))
     out_path = os.path.join(HERE, arg("--out", "active_probe_top100.csv"))
     top_n = int(arg("--top", "100"))
@@ -151,8 +151,8 @@ def main():
     # concentrate on hosting/transit, so this focuses the probe budget.
     exclude_cellular = arg("--exclude-cellular", "0") in ("1", "true", "yes")
 
-    if not os.path.exists(residual_path):
-        raise SystemExit(f"Missing residual file: {residual_path}")
+    if not os.path.exists(population_path):
+        raise SystemExit(f"Missing population file: {population_path}")
     if not os.path.exists(findings_path):
         raise SystemExit(f"Missing findings file: {findings_path}")
 
@@ -170,7 +170,7 @@ def main():
                     exclude.add(row["ip"].strip())
         print(f"excluding {len(exclude)} already-probed IPs")
 
-    d = json.load(open(residual_path, encoding="utf-8"))
+    d = json.load(open(population_path, encoding="utf-8"))
     recs = []
 
     for h in d["result"]["hits"]:
@@ -188,7 +188,7 @@ def main():
         row = findings.get(ip)
         conf = row["confidence"] if row else "NONE"
 
-        # Goal #2: find likely misses in residual -> keep LOW/NONE only.
+        # Goal #2: find likely misses in the population -> keep LOW/NONE only.
         if conf in ("HIGH", "MEDIUM"):
             continue
         # --none-only: discover brand-new indicators on hosts with ZERO known

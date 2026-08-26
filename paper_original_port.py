@@ -34,7 +34,7 @@ original:
   - classify(): HIGH=signature; MEDIUM=hosting|port>30; LOW=education|port>10;
                 else real
 
-Usage:  py paper_original_port.py [--file pop_all.json]
+Usage:  py paper_original_port.py [--file population.json]
 """
 import json
 import os
@@ -285,7 +285,7 @@ def is_detected_honeypot(label):
 
 
 def main():
-    _file = "pop_all.json"
+    _file = "population.json"
     if "--file" in sys.argv:
         _file = sys.argv[sys.argv.index("--file") + 1]
     path = os.path.join(HERE, _file)

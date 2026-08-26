@@ -24,7 +24,7 @@ in analysis_stats.json):
   9. Oddballs: the flagged hosts with the largest open-port counts (table only,
      in analysis_stats.json).
 
-Inputs:  deep_findings_aug20.csv (classifier output), population_aug20.json
+Inputs:  deep_findings.csv (classifier output), population.json
          (full ICS population), ipinfo_map.json (AS/company categories).
 Outputs: PNG charts (150 dpi) under fig_analysis/ + analysis_stats.json.
 """
@@ -33,8 +33,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-CSV = "deep_findings_aug20.csv"
-POP = "population_aug20.json"
+CSV = "deep_findings.csv"
+POP = "population.json"
 IPI = "ipinfo_map.json"
 FIGDIR = "fig_analysis"
 os.makedirs(FIGDIR, exist_ok=True)
@@ -295,10 +295,18 @@ def combo_is_promoted(combo):
 
 def abbrev_signal(s):
     """Compact label for one signal: our indicators -> their letter (A..P),
+    with a STRONG/WEAK marker for the graded ones (A/C/D/E/F emit two tokens);
     everything else (paper metrics / signatures) kept as-is."""
     import re
     m = re.match(r"^([A-KNP])_", s)
-    return m.group(1) if m else s
+    if not m:
+        return s
+    letter = m.group(1)
+    if s.endswith("_strong"):
+        return letter + "(S)"
+    if s.endswith("_weak"):
+        return letter + "(W)"
+    return letter
 
 
 def abbrev_combo(combo):

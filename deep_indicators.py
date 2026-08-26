@@ -14,12 +14,15 @@ There is NO residual pre-filtering step (that was an earlier approach). The pape
 and Censys detections are not removed up front; instead they are retained as a
 monotone floor and reported as part of the combined total.
 
-Input : pop_all.json  (the full Censys pull; every ICS host is scored)
+Input : population.json  (the full Censys pull; every ICS host is scored)
 Output: deep_findings.csv (per-host triggered indicators + confidence)
         + summary table (stdout)
 
 --------------------------------------------------------------------------------
-DISCOVERIES (verified on residual.json, ABSENT from the paper):
+DISCOVERIES (verified on the low-confidence subset of the population, ABSENT from
+the paper). The illustrative host counts below were observed on that subset during
+development and are kept only as provenance notes; the authoritative per-indicator
+counts are the ones emitted at run time into deep_findings.csv:
 
 C) TEMPLATED DEPLOYMENT  (cross-host fingerprint + ASN entropy)
    A byte-identical ICS identity copied to many hosts is NOT honeypot evidence on
@@ -72,24 +75,24 @@ I) OPC-UA SDK DEFAULT IDENTITY  (SPLIT INTO TWO CLASSES)
        A pure-Python OPC-UA library; a real industrial PLC does not run a Python
        OPC-UA server => a host carrying this URN is an emulator/PoC/honeypot (a
        software-emulation library, like snap7). signature_opcua_freeopcua().
-       89 hosts in the residual, all UNMARKED by the paper => 89 NEW HIGH.
+       89 hosts in that subset, all UNMARKED by the paper => 89 NEW HIGH.
      * open62541 'urn:open62541.server.application'/'http://open62541.org' and
        node-opcua 'NodeOPCUA-Server'/'NodeOPCUA' => host-of-interest (indicator_I,
        MEDIUM). These SDKs are also embedded in REAL commercial products, so a
        standalone HIGH would be a false positive; a second independent metric is
-       required. In the residual: open62541=70, node-opcua=22.
+       required. In that subset: open62541=70, node-opcua=22.
 
 SIG_modbus_pymodbus) the pymodbus EXAMPLE server default MEI vendor='Pymodbus'
    (and product_code='PM'). No genuine industrial device sends this identity =>
-   a pymodbus-based emulator/PoC/honeypot. STANDALONE HIGH. 6 hosts in the residual.
+   a pymodbus-based emulator/PoC/honeypot. STANDALONE HIGH. 6 hosts in that subset.
 SIG_bacnet_stackdemo) bacnet-stack (SourceForge/bacnet-stack.org) REFERENCE/DEMO
    server defaults: model_name='GNU' or object_name='SimpleServer'
    (device.c Device_Init). A commercial BACnet device does not ship with this
-   identity => an unmodified demo server. STANDALONE HIGH. 69 hosts in the residual.
+   identity => an unmodified demo server. STANDALONE HIGH. 69 hosts in that subset.
 SIG_mms_libiec61850) the libiec61850 IEC 61850 MMS reference library (gridpot
    packages it): unmodified mms.vendor='libiec61850.com' /
    mms.model='LIBIEC61850'. A real IED reports its own vendor name =>
-   demo/emulator/honeypot. STANDALONE HIGH. 19 hosts in the residual.
+   demo/emulator/honeypot. STANDALONE HIGH. 19 hosts in that subset.
 
 Note: honeypots scanned that yielded NO new signature: HoneyPLC (profile-based,
 uses identities captured from real PLCs, NO hardcoded default), ICSpot/T-Pot/DiPot
@@ -449,7 +452,7 @@ def _arg(name, default):
     return default
 
 
-PATH = os.path.join(HERE, _arg("--file", "pop_all.json"))
+PATH = os.path.join(HERE, _arg("--file", "population.json"))
 OUT = os.path.join(HERE, _arg("--out", "deep_findings.csv"))
 
 ICS_OBJS = ("modbus", "s7", "bacnet", "eip", "fox", "iec60870_5_104",
@@ -1116,6 +1119,25 @@ def paper_signals(r):
     return sig, strong, weak
 
 
+# Indicators A, C, D, E and F carry a genuine STRONG/WEAK split (the same STRONG
+# hit crosses the standalone-MEDIUM threshold, a WEAK hit does not). To stay
+# symmetric with the adopted method — which already emits two distinct tokens for
+# its graded indicators (paper_many_open_ports vs paper_many_open_ports_high, and
+# paper_hosting vs paper_as_education) — these indicators emit two distinct
+# identifiers as well, so a STRONG firing and a WEAK firing are never conflated in
+# the per-signal counts or the combination breakdown. Single-grade indicators
+# (B always STRONG; G/H/I/J/K/N/P always WEAK) keep a single identifier.
+_SPLIT_INDICATORS = {"A_vendor_conflict", "C_templated_deploy",
+                     "D_modbus_placeholder", "E_proto_implausible",
+                     "F_serial_clone"}
+
+
+def graded_key(base, grade):
+    if base in _SPLIT_INDICATORS:
+        return f"{base}_strong" if grade == "STRONG" else f"{base}_weak"
+    return base
+
+
 # ---------------------------------------------------------------------------
 def main():
     if not os.path.exists(PATH):
@@ -1174,15 +1196,17 @@ def main():
 
         a = indicator_A(r)
         if a:
-            triggered["A_vendor_conflict"] = (a[2], "|".join(a[0]))
+            triggered[graded_key("A_vendor_conflict", a[2])] = (a[2], "|".join(a[0]))
         b = indicator_B(r)
         if b:
             # indicator_B now returns only STRONG (the weak class was removed)
             triggered["B_template_id"] = ("STRONG", b[0][0])
         if ip in cluster:
-            triggered["C_templated_deploy"] = cluster[ip]
+            g, ev = cluster[ip]
+            triggered[graded_key("C_templated_deploy", g)] = (g, ev)
         if ip in clones:
-            triggered["F_serial_clone"] = clones[ip]
+            g, ev = clones[ip]
+            triggered[graded_key("F_serial_clone", g)] = (g, ev)
         if ip in colo:
             triggered["K_colocation_cluster"] = colo[ip]
         for name, fn in (("D_modbus_placeholder", indicator_D),
@@ -1195,7 +1219,7 @@ def main():
                          ("P_opcua_loopback_endpoint", indicator_P)):
             res = fn(r)
             if res:
-                triggered[name] = res
+                triggered[graded_key(name, res[0])] = res
 
         pm = paper_metrics(r)
         # --- UNIFIED MODEL: the paper signals also join the pool ---

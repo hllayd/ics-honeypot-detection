@@ -4,12 +4,12 @@
 Goal: use active probing to DISCOVER passive indicators the passive
 pipeline missed. For each probed host its live reality is now known
 (REAL_DEVICE / DEAD / SUSPECT). The SAME host's full passive Censys
-record is pulled from the residual dump and inspected for passive fields
+record is pulled from the passive population and inspected for passive fields
 that separate the classes -> candidate new passive indicators.
 
 Inputs
 - batch1_results.json, batch2_results.json (active probe outcomes)
-- residual_paper17.json (passive Censys records, 110k hosts)
+- population.json (passive Censys records for the full ICS population)
 
 Method
 1. Classify each probed host from active evidence:
@@ -94,10 +94,10 @@ def main():
     for k, n in counts.most_common():
         print(f"  {k}: {n}")
 
-    # ---- 2. join to passive residual ----
+    # ---- 2. join to the passive population ----
     wanted = set(cls)
     passive = {}
-    res = load("residual_paper17.json")
+    res = load("population.json")
     hits = res.get("result", {}).get("hits", res if isinstance(res, list) else [])
     for h in hits:
         r = h.get("host_v1", {}).get("resource", h)

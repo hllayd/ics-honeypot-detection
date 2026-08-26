@@ -5,7 +5,7 @@ step.
 The paper queries the IPinfo 'IP to Company' database (standard_company.mmdb)
 OFFLINE with maxminddb and adds company.type + as.type to each host. This script
 does the same for Censys Platform (v3) data: it looks up every UNIQUE IP in
-pop_all.json against the MMDB and writes the result to ipinfo_map.json.
+population.json against the MMDB and writes the result to ipinfo_map.json.
 paper_original_port.py uses this map.
 
 IPinfo record (verified fields):
@@ -17,7 +17,7 @@ Requirement:
   standard_company.mmdb  (download from your IPinfo account; place in this directory)
 
 Usage:
-  py enrich_ipinfo.py [--file pop_all.json] [--db standard_company.mmdb]
+  py enrich_ipinfo.py [--file population.json] [--db standard_company.mmdb]
 Output:
   ipinfo_map.json  = { ip: {name,domain,type,asn,as_name,as_domain,as_type,country} }
 """
@@ -40,7 +40,7 @@ def main():
     except ImportError:
         sys.exit("ERROR: 'maxminddb' is missing. Install: pip install maxminddb")
 
-    pop = os.path.join(HERE, arg("--file", "pop_all.json"))
+    pop = os.path.join(HERE, arg("--file", "population.json"))
     db = os.path.join(HERE, arg("--db", "standard_company.mmdb"))
     out = os.path.join(HERE, "ipinfo_map.json")
 
