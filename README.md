@@ -21,9 +21,20 @@ the detection surface along several independent axes:
   reusing the paper's three signatures, a wide corpus of ICS honeypots and the open
   protocol libraries they embed was reviewed (see *Honeypot corpus examined*), and
   each was inspected for an implementation-default identity a genuine field device
-  would never emit. This yields **six new signatures across four additional
-  protocols** (OPC-UA, BACnet, Modbus, MMS) on top of the adopted three — for
-  example the FreeOpcUa/pymodbus/bacnet-stack/libiec61850 library defaults.
+  would never emit. This yields **five new default-identity signatures across four
+  additional protocols** (OPC-UA, BACnet, Modbus, MMS) on top of the adopted three —
+  for example the FreeOpcUa/pymodbus/bacnet-stack/libiec61850 library defaults.
+- **A capability-based (specification-impossibility) signature, not just a string
+  match.** Unlike a default-string signature, which flags a *known* placeholder
+  value, this rule flags an internal contradiction that a genuine, certified device
+  could never produce by specification — regardless of any specific string. The one
+  implemented (`SIG_bacnet_id_name_mismatch`) pairs a BACnet `vendor_name` with a
+  `vendor_id` that the central ASHRAE registry assigns to a *different*
+  organization; a real BACnet device cannot report a registered name against the
+  wrong registered id. Because it keys on a spec violation rather than a literal
+  default, it is robust to firmware/version drift and to attackers who simply change
+  the default strings. Counting it, this work adds **six new signatures** in total
+  (five default-identity + one capability-based).
 - **Cross-host (relational) indicators, not just per-host tests.** The paper judges
   each host in isolation. This work adds indicators that compare a host *against
   the rest of the population*: identical hardware serials appearing across
