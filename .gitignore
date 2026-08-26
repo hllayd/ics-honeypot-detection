@@ -11,6 +11,8 @@ batch*_outputs*/
 
 # Query inputs may contain account-specific details
 query*.txt
+# ...except the published population query used to reproduce population.json
+!query_population.txt
 
 # Python
 __pycache__/

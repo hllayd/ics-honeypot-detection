@@ -38,15 +38,10 @@ the detection surface along several independent axes:
   number of unrelated native protocols (`E_proto_implausible`), spec-violating
   OPC-UA parameters (`G_opcua_degenerate`), ASHRAE-reserved BACnet vendor IDs
   (`J_bacnet_reserved_id`), and template/placeholder identity fields (B, D, H, N, P).
-- **A unified, monotone scoring model.** The adopted signals and all new
-  signatures/indicators are scored in **one combined pass** over the full ICS
-  population, with the adopted verdicts retained as a floor (see *Pipeline
-  overview*), so coverage strictly increases and nothing the paper would detect is
-  lost.
 - **An optional read-only active-probing loop** that both validates the passive
   verdicts on a sample and feeds newly observed honeypot tells back into the
-  passive rule set (see *Optional read-only active-probing validation and
-  discovery*).
+  passive rule set (see [*Optional read-only active-probing validation and
+  discovery*](#optional-read-only-active-probing-validation-and-discovery)).
 
 In total the detection surface grows from the adopted 3 signatures + 2 network
 metrics to **9 signatures and 15 host-of-interest indicators**.
@@ -157,7 +152,7 @@ Run in order:
 
 | Step | Script | Purpose & Inputs/Outputs |
 |------|--------|--------------------------|
-| 1 | `paginate_all.py` | **Purpose:** retrieve the full ICS population from the Censys Platform API (paginated). **Inputs:** `query.txt` (the Censys query) and the Censys Platform API (`CENSYS_PAT` / `CENSYS_ORG`). **Output:** `population.json` (the full raw ICS host records). |
+| 1 | `paginate_all.py` | **Purpose:** retrieve the full ICS population from the Censys Platform API (paginated). **Inputs:** `query_population.txt` (the published Censys query — the ICS protocol list used for this work's population) and the Censys Platform API (`CENSYS_PAT` / `CENSYS_ORG`). **Output:** `population.json` (the full raw ICS host records). |
 | 2 | `enrich_ipinfo.py` | **Purpose:** add company/AS category to every unique IP via the IPinfo *IP-to-Company* MMDB (equivalent to the paper's `2_look_up_as_categories.py`). **Inputs:** `population.json` and the `standard_company.mmdb` IPinfo database. **Output:** `ipinfo_map.json` (`{ ip: {name, domain, type, asn, as_name, as_domain, as_type, country} }`). |
 | 3 | `deep_indicators.py` | **The unified classifier.** Defines this work's new detectors and scores every ICS host in a single pass over the full population, against the complete pool of **9 signatures** and **15 host-of-interest indicators** (the 13 new ones, A–K, N and P, plus the 2 adopted network metrics folded in via `paper_signals()`). **Inputs:** `population.json` (and the adopted logic imported from `paper_original_port.py`). **Output:** `deep_findings.csv` (per-host triggered signatures/indicators + confidence tier). |
 | 4 | `honeypot_analysis.py` | Characterises the flagged (HIGH+MEDIUM) honeypot set against the full ICS population and renders the result charts. It computes the protocol mix, the per-country host counts and the honeypot proportion per country, the autonomous-system and AS/business-type breakdown, the open-port-count distribution (CDF), and the multi-protocol distribution. **Inputs:** `deep_findings.csv`, `population.json`, and `ipinfo_map.json`. **Outputs:** `.png` charts (150 dpi) under `fig_analysis/` together with an `analysis_stats.json` summary of the underlying numbers. |
@@ -216,10 +211,10 @@ to run against production-adjacent ICS.
 $env:CENSYS_PAT = "censys_pat_xxx"
 $env:CENSYS_ORG = "your-org-id"
 
-py paginate_all.py                 # -> population.json
-py enrich_ipinfo.py                # -> ipinfo_map.json
-py deep_indicators.py              # unified classifier -> deep_findings.csv
-py honeypot_analysis.py            # -> figures + analysis_stats.json
+py paginate_all.py query_population.txt   # -> population.json
+py enrich_ipinfo.py                       # -> ipinfo_map.json
+py deep_indicators.py                     # unified classifier -> deep_findings.csv
+py honeypot_analysis.py                   # -> figures + analysis_stats.json
 ```
 
 ## Ethics
