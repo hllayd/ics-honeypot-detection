@@ -183,6 +183,19 @@ two goals — **validation** (are the passive labels correct?) and **discovery**
 live signs also have a passive shadow?). Both reuse a single join between the passive
 verdict `P` and the active ground-truth class `A`.
 
+**Step 0 — Candidate selection (`select_active_probe_candidates.py`).** The probe
+budget is limited, so each batch probes a ranked shortlist of about 100 hosts, not the
+whole population. Only hosts the passive pipeline left **below threshold** (`LOW` or
+`NONE`) are eligible — the aim is to catch misses, not to re-check hosts already flagged
+`HIGH`/`MEDIUM`. Each eligible host is scored by its strongest weak passive signal (a
+reserved BACnet id, an OPC-UA SDK default, a shared serial, …), with an exact BACnet
+vendor-name/id registry mismatch ranked highest, then ordered by score and by how many
+actively-probeable protocols it exposes. The top hundred are written to
+`active_probe_top100.csv` with a per-protocol probe bundle. Successive batches exclude
+already-probed IPs, and optional filters drop UDP-only or cellular-carrier hosts that
+earlier batches showed to be a false-positive trap. **Ten to twelve such batches were
+run in total.**
+
 **Step 1 — Probe queries (`probe_active.py`).** The prober asks each host for its own
 identity using the native read/status request of the protocol on that port:
 
@@ -206,14 +219,13 @@ Each answer is mapped to one ground-truth class by fixed rules:
 
 **Step 3a — Validation (compare `P` with `A`).** Join every probed host by IP.
 Agreement (`P` = honeypot and `A` = `SUSPECT`) confirms the label; disagreement
-(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. The sample is chosen by evidence
-combination, not at random, so every classification pathway is covered — not only the
-large Conpot-derived cluster. This confirmed the true positives and rejected the draft
-indicators **L** and **M**, whose hosts turned out to be genuine cellular gateways. For
-example, the same EtherNet/IP serial `0x006cb804` appeared passively across four
-autonomous systems; a read-only ListIdentity to each returned the identical serial and
-product string, confirming a single cloned emulator image (indicator **F**), not four
-separate PLCs.
+(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. This confirmed the true positives
+and rejected the draft indicators **L** and **M**, whose hosts turned out to be genuine
+cellular gateways. Validation can also confirm an existing cross-host rule: the same
+EtherNet/IP serial `0x006cb804` appeared passively across four autonomous systems, and a
+read-only ListIdentity to each returned the identical serial and product string,
+confirming a single cloned emulator image (indicator **F**) rather than four separate
+PLCs.
 
 **Step 3b — Discovery (find the passive shadow of `A`).** Group the probed hosts by
 their active class `A`, then, for each passive field, contrast the value frequencies
@@ -223,8 +235,11 @@ passive shadow** in the Censys data, it becomes a new, purely passive rule for t
 run. This is how indicator **N** (EtherNet/IP ListServices with an empty ListIdentity,
 raw `63 00 00 00 00 00 00 00 01 00 00 00`), the WAGO co-location indicator **K**
 (`urn:wago-com:opcua-server`), and the open62541 default `application_uri`
-(`urn:unconfigured:application`) behind indicator **I** were first found. Active probing
-therefore builds better passive rules; it is not the detector itself.
+(`urn:unconfigured:application`) behind indicator **I** were first found. These three are
+the indicators that active probing genuinely *discovered*. By contrast, the
+default-identity signatures such as `SIG_modbus_pymodbus` and `SIG_mms_libiec61850` were
+derived from analysing known honeypot/emulator software, **not** from probing. Active
+probing therefore builds better passive rules; it is not the detector itself.
 
 | Script | Purpose & Inputs/Outputs |
 |--------|--------------------------|
