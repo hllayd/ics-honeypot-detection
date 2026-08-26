@@ -177,7 +177,7 @@ Supporting module (imported by the pipeline, not a separate step):
 The passive pipeline above assigns confidence only from Censys scan data. It never
 touches the hosts. The active-probing stage is a **separate, optional, read-only
 check**. Every probe only reads a value or asks for status; it never writes,
-controls, or changes anything, it runs only against authorized targets, and because
+controls, or changes anything, and because
 it never alters a host's state it is safe against production-adjacent ICS. It has
 two goals — **validation** (are the passive labels correct?) and **discovery** (which
 live signs also have a passive shadow?). Both reuse a single join between the passive
@@ -254,7 +254,7 @@ probing therefore builds better passive rules; it is not the detector itself.
 | `select_active_probe_candidates.py` | **Purpose:** rank candidate hosts (from the passive findings) into a probe shortlist, tagging each with the protocols/ports to query. **Inputs:** `population.json` and `deep_findings.csv`. **Output:** `active_probe_top100.csv` (the ranked probe shortlist). |
 | `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands) that runs the shortlisted queries and records the raw + parsed identity fields. **Input:** a probe shortlist CSV (e.g. `active_probe_top100.csv`, via `--csv`). **Output:** a results JSON (e.g. `batch1_results.json`, via `--out`). |
 | `correlate_active_passive.py` | Correlate the active ground-truth with the passive Censys fields to confirm verdicts and surface new candidate passive indicators. **Inputs:** the probe results JSONs (`batch1_results.json`, `batch2_results.json`) and `population.json`. **Output:** `active_passive_join.json` (per-host active-vs-passive comparison). |
-| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot signs to look for (authorized targets only). **Input/Output:** documentation only (no data files). |
+| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot signs to look for. **Input/Output:** documentation only (no data files). |
 
 ## Requirements
 
@@ -279,7 +279,7 @@ py honeypot_analysis.py                   # -> figures + analysis_stats.json
 
 ## Ethics
 
-All active probing is strictly read-only against authorized targets: no write,
+All active probing is strictly read-only: no write,
 control, or function-changing operations are issued. Generated data files contain
 real host IP addresses and are intentionally excluded from version control (see
 `.gitignore`).
