@@ -174,31 +174,29 @@ Supporting module (imported by the pipeline, not a separate step):
 
 ### Optional read-only active-probing validation and discovery
 
-The passive pipeline above assigns confidence purely from Censys scan data; it
-never touches the hosts. The active-probing stage is a **separate, optional
-ground-truth check** that exists for two reasons:
+The passive pipeline above assigns confidence only from Censys scan data. It never
+touches the hosts. The active-probing stage is a **separate, optional check**. It
+has two goals:
 
-1. **Validate the passive verdicts.** A passive HIGH/MEDIUM label is an inference
-   from indirect fields. By issuing a small number of protocol-native, read-only
-   queries to a *sample* of flagged hosts, the true device identity (vendor,
-   model, serial, endpoint set, banner behaviour) can be observed directly and
-   compared with what the passive classifier predicted. This distinguishes real
-   detections from false positives and turns "likely honeypot" into a
-   confirmed/rejected judgement on that sample — i.e. it estimates the passive
-   method's precision without having to trust it blindly.
-2. **Discover new passive indicators.** Some honeypot tells are only visible in
-   fields that a wide-scan platform does not routinely collect (e.g. MEI object
-   blocks, OPC-UA endpoint matrices, IEC-104 U-frame timing). Probing confirmed
-   hosts reveals these artifacts; `correlate_active_passive.py` then checks which
-   of them *also* have a passive shadow in the Censys corpus, so they can be
-   promoted into new purely-passive signatures/indicators for the next run. In
-   other words, active probing is used to *bootstrap* better passive rules, not as
-   the detection method itself.
+1. **Check that the passive labels are correct.** A passive HIGH/MEDIUM label is
+   only a guess based on indirect fields. To test it, we send a few read-only
+   queries to a small sample of flagged hosts. Each query asks the host for its own
+   identity (vendor, model, serial, endpoints, banner). We then compare the real
+   answer with what the classifier predicted. This tells us which labels are correct
+   and which are false positives. In short, it gives an estimate of how precise the
+   passive method is, without having to trust it blindly.
+2. **Find new passive indicators.** Some honeypot signs live in fields that a
+   wide-scan platform does not always collect (for example MEI object blocks, OPC-UA
+   endpoint lists, or IEC-104 timing). Probing a confirmed host shows these fields.
+   `correlate_active_passive.py` then checks whether the same sign is also visible in
+   the Censys data. If it is, we can turn it into a new passive rule for the next
+   run. So active probing is used to build better passive rules, not to do the
+   detection itself.
 
-The stage is deliberately **read-only**: every probe is a query or status read;
-no write, control, or function-changing command is ever issued, and it is run only
-against authorized targets. The result never changes a host's state, so it is safe
-to run against production-adjacent ICS.
+The stage is **read-only** on purpose. Every probe only reads or asks for status.
+It never writes, controls, or changes anything, and it runs only against authorized
+targets. Because it never changes a host's state, it is safe to run against
+production-adjacent ICS.
 
 | Script | Purpose & Inputs/Outputs |
 |--------|--------------------------|
