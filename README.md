@@ -11,6 +11,46 @@ logic from the authors' repository
 (<https://github.com/martinmladenov/ICS-Honeypots>). All other analysis in this
 repository is original work built on top of that method.
 
+## What this work adds over the paper
+
+The adopted method rests on a small number of protocol signatures (S7comm and ATG)
+and two coarse network metrics (open-port count and AS type). This project widens
+the detection surface along several independent axes:
+
+- **A broader honeypot/implementation study to mine new signatures.** Rather than
+  reusing the paper's two signatures, a wide corpus of ICS honeypots and the open
+  protocol libraries they embed was reviewed (see *Honeypot corpus examined*), and
+  each was inspected for an implementation-default identity a genuine field device
+  would never emit. This yields **six new signatures across four additional
+  protocols** (OPC-UA, BACnet, Modbus, MMS) on top of the adopted three — for
+  example the FreeOpcUa/pymodbus/bacnet-stack/libiec61850 library defaults.
+- **Cross-host (relational) indicators, not just per-host tests.** The paper judges
+  each host in isolation. This work adds indicators that compare a host *against
+  the rest of the population*: identical hardware serials appearing across
+  unrelated ASNs (`F_serial_clone`), large byte-identical deployments concentrated
+  in low-diversity hosting space (`C_templated_deploy`), and same-AS/same-/24
+  co-location clusters sharing an identity (`K_colocation_cluster`). A cloned or
+  templated emulator only becomes visible when one host is viewed relative to
+  others, so these tells are invisible to a purely per-host classifier.
+- **Deeper single-host consistency checks.** Additional per-host indicators exploit
+  states that are physically or specification-impossible for a real device:
+  conflicting native vendor stacks on one host (`A_vendor_conflict`), an implausible
+  number of unrelated native protocols (`E_proto_implausible`), spec-violating
+  OPC-UA parameters (`G_opcua_degenerate`), ASHRAE-reserved BACnet vendor IDs
+  (`J_bacnet_reserved_id`), and template/placeholder identity fields (B, D, H, N, P).
+- **A unified, monotone scoring model.** The adopted signals and all new
+  signatures/indicators are scored in **one combined pass** over the full ICS
+  population, with the adopted verdicts retained as a floor (see *Pipeline
+  overview*), so coverage strictly increases and nothing the paper would detect is
+  lost.
+- **An optional read-only active-probing loop** that both validates the passive
+  verdicts on a sample and feeds newly observed honeypot tells back into the
+  passive rule set (see *Optional read-only active-probing validation and
+  discovery*).
+
+In total the detection surface grows from the adopted 3 signatures + 2 network
+metrics to **9 signatures and 15 host-of-interest indicators**.
+
 ## Honeypot corpus examined
 
 To ground the signature work, a broad corpus of publicly available ICS honeypots
@@ -124,7 +164,7 @@ Supporting module (imported by the pipeline, not a separate step):
 
 - `paper_original_port.py` — faithful port of the adopted Mladenov et al. classifier; its signals are folded into the unified pool via `paper_signals()`.
 
-### Optional read-only active-probing validation
+### Optional read-only active-probing validation and discovery
 
 The passive pipeline above assigns confidence purely from Censys scan data; it
 never touches the hosts. The active-probing stage is a **separate, optional
