@@ -42,7 +42,7 @@ the detection surface along several independent axes:
   in low-diversity hosting space (`C_templated_deploy`), and same-AS/same-/24
   co-location clusters sharing an identity (`K_colocation_cluster`). A cloned or
   templated emulator only becomes visible when one host is viewed relative to
-  others, so these tells are invisible to a purely per-host classifier.
+  others, so these signs are invisible to a purely per-host classifier.
 - **Deeper single-host consistency checks.** Additional per-host indicators exploit
   states that are physically or specification-impossible for a real device:
   conflicting native vendor stacks on one host (`A_vendor_conflict`), an implausible
@@ -50,7 +50,7 @@ the detection surface along several independent axes:
   OPC-UA parameters (`G_opcua_degenerate`), ASHRAE-reserved BACnet vendor IDs
   (`J_bacnet_reserved_id`), and template/placeholder identity fields (B, D, H, N, P).
 - **An optional read-only active-probing loop** that both validates the passive
-  verdicts on a sample and feeds newly observed honeypot tells back into the
+  verdicts on a sample and feeds newly observed honeypot signs back into the
   passive rule set (see [*Optional read-only active-probing validation and
   discovery*](#optional-read-only-active-probing-validation-and-discovery)).
 
@@ -203,7 +203,7 @@ production-adjacent ICS.
 | `select_active_probe_candidates.py` | **Purpose:** rank candidate hosts (from the passive findings) into a probe shortlist, tagging each with the protocols/ports to query. **Inputs:** `population.json` and `deep_findings.csv`. **Output:** `active_probe_top100.csv` (the ranked probe shortlist). |
 | `probe_active.py` | Pure-Python **read-only** ICS prober (no writes / no control commands) that runs the shortlisted queries and records the raw + parsed identity fields. **Input:** a probe shortlist CSV (e.g. `active_probe_top100.csv`, via `--csv`). **Output:** a results JSON (e.g. `batch1_results.json`, via `--out`). |
 | `correlate_active_passive.py` | Correlate the active ground-truth with the passive Censys fields to confirm verdicts and surface new candidate passive indicators. **Inputs:** the probe results JSONs (`batch1_results.json`, `batch2_results.json`) and `population.json`. **Output:** `active_passive_join.json` (per-host active-vs-passive comparison). |
-| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot tells to look for (authorized targets only). **Input/Output:** documentation only (no data files). |
+| [`probe_playbook.md`](probe_playbook.md) | Per-protocol read-only probe playbook — the exact queries to run and the honeypot signs to look for (authorized targets only). **Input/Output:** documentation only (no data files). |
 
 ## Requirements
 
