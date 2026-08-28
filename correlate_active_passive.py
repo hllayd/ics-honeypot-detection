@@ -8,15 +8,15 @@ record is pulled from the passive population and inspected for passive fields
 that separate the classes -> candidate new passive indicators.
 
 Inputs
-- batch1_results.json, batch2_results.json (active probe outcomes)
+- active_probe_top100_results.json (active probe outcomes, 100 probed hosts)
 - population.json (passive Censys records for the full ICS population)
 
 Method
 1. Classify each probed host from active evidence:
    - REAL_DEVICE: BACnet I-Am with plausible same-family vendor OR Modbus MEI
      returned real vendor/product (Schneider/Phoenix/etc).
-   - SUSPECT: cross-vendor mismatch (name vs id different brands) OR injected
-     payload in identity fields OR reserved vendor id live.
+   - SUSPECT: reserved (ASHRAE) BACnet vendor_id live, OR a spec-impossible
+     live vendor_name<->vendor_id pair (same rule as the passive classifier).
    - DEAD: no protocol response at all (all timeouts/empty) -> inconclusive.
 2. Join to passive record by IP; collect passive BACnet/Modbus/service fields.
 3. Contrast field-value frequency REAL vs SUSPECT to surface discriminators.
@@ -25,13 +25,52 @@ Method
 import json
 import os
 import re
+import sys
 import collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Spec-assigned BACnet vendor_name -> official vendor_id registry, kept in sync
+# with the passive classifier (deep_indicators.signature_bacnet_id_name_mismatch).
+# A live device reporting one of these names with a DIFFERENT id is an identity a
+# certified device could not produce -> the same SUSPECT rule the passive side uses.
+try:
+    from deep_indicators import BACNET_NAME_TO_ID
+except Exception:
+    BACNET_NAME_TO_ID = {"bacnet stack at sourceforge": 260}
+
 
 def load(name):
     return json.load(open(os.path.join(HERE, name), encoding="utf-8"))
+
+
+def _arg(name, default):
+    if name in sys.argv:
+        return sys.argv[sys.argv.index(name) + 1]
+    return default
+
+
+def _population_file():
+    """Passive Censys population to join against (default population.json).
+       Override with --population <file>."""
+    return _arg("--population", "population.json")
+
+
+def _batch_files():
+    """Batch result files to correlate. Pass them on the command line, e.g.
+       py correlate_active_passive.py active_probe_top100_results.json
+       py correlate_active_passive.py batch3_results.json --population population.json
+    Defaults to active_probe_top100_results.json (the prepared, verified demo
+    batch of 100 probed hosts). The value of --population is not treated as a
+    batch."""
+    skip = set()
+    if "--population" in sys.argv:
+        i = sys.argv.index("--population")
+        skip.add(i)
+        skip.add(i + 1)
+    args = [a for j, a in enumerate(sys.argv[1:], start=1)
+            if a.endswith(".json") and j not in skip]
+    return args if args else ["active_probe_top100_results.json"]
 
 
 # ---- 1. classify from active evidence ----
@@ -53,17 +92,18 @@ def classify(rec):
     ia = b.get("i_am", {}) if b else {}
     props = b.get("properties", {}) if b else {}
 
-    # injected payload in any identity field => SUSPECT
-    blob = " ".join(str(v) for v in props.values())
-    if re.search(r"<script|alert\(|onerror=|;//|\bunion\b", blob, re.I):
-        return "SUSPECT", "injected_payload_in_identity"
-
     if ia.get("device_instance") is not None:
         # live BACnet; compare reported vendor_name brand vs registry via probe reason
         vn = props.get("vendor_name", "")
+        vid = ia.get("vendor_id")
         # reserved-id live device
-        if ia.get("vendor_id") in (555, 666, 777, 888, 911, 999, 1111):
-            return "SUSPECT", f"reserved_vendor_id_live({ia.get('vendor_id')})"
+        if vid in (555, 666, 777, 888, 911, 999, 1111):
+            return "SUSPECT", f"reserved_vendor_id_live({vid})"
+        # spec-impossible live name<->id (same rule as the passive classifier)
+        canon = BACNET_NAME_TO_ID.get(str(vn).strip().lower())
+        if canon is not None and vid != canon:
+            return "SUSPECT", (f"bacnet_id_name_impossible name={vn!r} "
+                               f"reported_id={vid} registered_id={canon}")
         return "REAL_DEVICE", f"bacnet_live vn={vn!r} model={props.get('model_name')!r}"
 
     # live modbus device identification with real vendor
@@ -83,30 +123,32 @@ def classify(rec):
 
 
 def main():
-    active = load("batch1_results.json") + load("batch2_results.json")
+    batch_files = _batch_files()
+    population_file = _population_file()
+    active = []
+    for bf in batch_files:
+        active += load(bf)
+    print(f"Active probe results : {', '.join(batch_files)}  ({len(active)} probed hosts)")
+    print(f"Passive population   : {population_file}")
     cls = {}
     for rec in active:
         c, why = classify(rec)
         cls[rec["ip"]] = (c, why, rec)
 
     counts = collections.Counter(v[0] for v in cls.values())
-    print("=== active-truth classes ===")
-    for k, n in counts.most_common():
-        print(f"  {k}: {n}")
 
-    # ---- 2. join to the passive population ----
+    # ---- 2. join every probed host to its passive Censys record ----
     wanted = set(cls)
     passive = {}
-    res = load("population.json")
+    res = load(population_file)
     hits = res.get("result", {}).get("hits", res if isinstance(res, list) else [])
     for h in hits:
         r = h.get("host_v1", {}).get("resource", h)
         ip = r.get("ip") or h.get("ip")
         if ip in wanted:
             passive[ip] = r
-    print(f"\njoined passive records: {len(passive)}/{len(wanted)}")
 
-    # ---- 3. collect passive fields per class ----
+    # ---- 3. collect passive BACnet identity fields per active class ----
     def passive_bacnet(r):
         for s in r.get("services", []):
             b = s.get("bacnet")
@@ -121,13 +163,9 @@ def main():
                 return md
         return {}
 
-    # gather field-value sets per class for BACnet identity fields
     fields = ["object_name", "vendor_name", "model_name", "description",
               "location", "firmware_revision", "application_software_version"]
     byclass = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
-    portcount = collections.defaultdict(list)
-    svc_names = collections.defaultdict(collections.Counter)
-
     for ip, (c, why, rec) in cls.items():
         r = passive.get(ip)
         if not r:
@@ -137,46 +175,164 @@ def main():
             val = b.get(f)
             if val not in (None, ""):
                 byclass[c][f][str(val)] += 1
-        # generic host-level passive signals
-        svcs = r.get("services", [])
-        portcount[c].append(len(svcs))
-        for s in svcs:
-            svc_names[c][s.get("protocol") or s.get("service_name") or "?"] += 1
 
-    print("\n=== passive service count (open services) per class ===")
-    for c, lst in portcount.items():
-        if lst:
-            print(f"  {c}: n={len(lst)} avg_services={sum(lst)/len(lst):.1f} "
-                  f"min={min(lst)} max={max(lst)}")
+    # dump the full join for manual review / the report
+    #
+    # passive honeypot verdict P for a probed host. This work's passive
+    # classifier: a STRONG indicator => MEDIUM/HIGH => "honeypot"; a single
+    # weak/host-of-interest metric => LOW => "below". The verdict is carried
+    # in the probe record's passive reasons tag (NEW_STRONG.. vs LOW_..).
+    def passive_label(rec):
+        tag = (rec.get("reasons", "") or "").split(":")[0].upper()
+        return "honeypot" if ("STRONG" in tag or "HIGH" in tag) else "below"
 
-    print("\n=== passive protocol mix per class ===")
-    for c, cnt in svc_names.items():
-        print(f"  {c}: {dict(cnt.most_common(6))}")
+    # readable meaning of each P x A cell (the 4 validation buckets)
+    CELL_READING = {
+        ("honeypot", "SUSPECT"):     "confirmed_honeypot",
+        ("honeypot", "REAL_DEVICE"): "review_looks_real_live",
+        ("below",    "SUSPECT"):     "discovery_passive_undercalled",
+        ("below",    "REAL_DEVICE"): "agree_genuine_device",
+        ("honeypot", "MODBUS_ALIVE_NOID"): "honeypot_alive_no_identity_inconclusive",
+        ("honeypot", "DEAD"):              "honeypot_no_active_response_inconclusive",
+        ("below",    "MODBUS_ALIVE_NOID"): "below_alive_no_identity_inconclusive",
+        ("below",    "DEAD"):              "below_no_active_response_inconclusive",
+    }
 
-    print("\n=== BACnet passive identity fields: REAL vs SUSPECT discriminators ===")
-    for f in fields:
-        real = byclass["REAL_DEVICE"][f]
-        susp = byclass["SUSPECT"][f]
-        if not real and not susp:
-            continue
-        print(f"\n-- {f} --")
-        if susp:
-            print("  SUSPECT:", dict(susp.most_common(6)))
-        if real:
-            print("  REAL   :", dict(real.most_common(6)))
-
-    # dump full join for manual review
     out = []
     for ip, (c, why, rec) in cls.items():
         r = passive.get(ip, {})
-        out.append({"ip": ip, "active_class": c, "active_why": why,
+        p = passive_label(rec)
+        out.append({"ip": ip,
+                    "passive_label": p,             # P
+                    "active_class": c,              # A
+                    "validation_cell": f"{p}|{c}",  # P x A bucket key
+                    "validation_reading": CELL_READING.get((p, c), f"{p}|{c}"),
+                    "active_why": why,
                     "passive_bacnet": passive_bacnet(r),
                     "passive_modbus_vendor": passive_modbus(r).get("mei_response", {})
                     if passive_modbus(r) else {},
                     "passive_service_count": len(r.get("services", []))})
     json.dump(out, open(os.path.join(HERE, "active_passive_join.json"), "w",
                         encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"\nWROTE active_passive_join.json ({len(out)} hosts)")
+
+    # ===================================================================
+    #  DECK-ALIGNED OUTPUT: one comparison (P vs A), two readings.
+    #  Slide 18: each probed host has a passive label P and an active
+    #  class A; match by IP and read the result two ways.
+    # ===================================================================
+    real = byclass["REAL_DEVICE"]
+    susp = byclass["SUSPECT"]
+    NAMES = [
+        ("SUSPECT",           "SUSPECT     identity a certified device cannot emit"),
+        ("REAL_DEVICE",       "REAL_DEVICE genuine, self-consistent identity"),
+        ("MODBUS_ALIVE_NOID", "ALIVE-NO-ID speaks the protocol, returns no identity"),
+        ("DEAD",              "DEAD        no protocol response (inconclusive)"),
+    ]
+
+    # describe the active anomaly of a SUSPECT host: (protocol, field, value)
+    def suspect_anomaly(rec):
+        b = rec["probes"].get("BACNET", {})
+        props = b.get("properties", {}) if b else {}
+        ia = b.get("i_am", {}) if b else {}
+        vid = ia.get("vendor_id")
+        if vid in (555, 666, 777, 888, 911, 999, 1111):
+            return ("BACnet", "vendor_id (ASHRAE-reserved)", str(vid))
+        vn = props.get("vendor_name", "")
+        canon = BACNET_NAME_TO_ID.get(str(vn).strip().lower())
+        if canon is not None and vid != canon:
+            return ("BACnet", "vendor_name vs vendor_id",
+                    f"{vn!r} id={vid} (registered {canon})")
+        return ("BACnet", "identity", "cross-field mismatch")
+
+    print("\n" + "=" * 70)
+    print("  STEP 1  Each probed host gets a live ground-truth class  A")
+    print("=" * 70)
+    for k, label in NAMES:
+        print(f"    A = {label:<55} {counts.get(k, 0):>3}")
+    print(f"    joined to their passive Censys record{'':<20} {len(passive):>3}/{len(cls)}")
+
+    # ---- SUSPECT hosts: the active anomaly that anchors the comparison ----
+    suspect_ips = [ip for ip, (c, why, rec) in cls.items() if c == "SUSPECT"]
+    print("\n" + "=" * 70)
+    print("  SUSPECT HOSTS  -  the live anomaly each one exposes")
+    print("=" * 70)
+    print(f"  {'ip':<17} {'protocol':<9} {'field':<28} value")
+    print(f"  {'-'*15:<17} {'-'*8:<9} {'-'*26:<28} {'-'*20}")
+    for ip in suspect_ips:
+        proto, field, value = suspect_anomaly(cls[ip][2])
+        print(f"  {ip:<17} {proto:<9} {field:<28} {value!r}")
+
+    # ---- one comparison, P x A ----
+    pa = collections.Counter()
+    for ip, (c, why, rec) in cls.items():
+        if ip in passive:
+            pa[(passive_label(rec), c)] += 1
+
+    print("\n" + "=" * 70)
+    print("  READING 1   VALIDATION  -  where the passive honeypot verdict (P)")
+    print("                            meets the live active class (A)")
+    print("=" * 70)
+    print("  P = this work's passive classifier (STRONG->honeypot, weak-only->below).")
+    print("  Count the hosts in each P x A combination:")
+    print()
+    print(f"    {'P (passive)':<14} {'A (active read)':<16} {'hosts':>5}   reading")
+    print(f"    {'-'*12:<14} {'-'*14:<16} {'-'*5:>5}   {'-'*30}")
+    rows = [
+        ("honeypot", "SUSPECT",     "active read agrees -> confirmed"),
+        ("honeypot", "REAL_DEVICE", "1-protocol read looks real -> review"),
+        ("below",    "SUSPECT",     "passive under-called -> DISCOVERY lead"),
+        ("below",    "REAL_DEVICE", "both agree -> genuine device"),
+    ]
+    for p, a, note in rows:
+        print(f"    {p:<14} {a:<16} {pa.get((p, a), 0):>5}   {note}")
+    print()
+    print("  => the comparison is self-checking: where the two agree the passive")
+    print("     verdict is confirmed; where they differ the host is flagged for")
+    print("     review. A REAL_DEVICE read is a shallow single-protocol response,")
+    print("     not a refutation of the multi-service passive evidence.")
+
+    print("\n" + "=" * 70)
+    print("  READING 2   DISCOVERY  -  find the passive shadow of active")
+    print("=" * 70)
+    print("  Group hosts by A, then for each passive identity field ask:")
+    print("  which value shows up in SUSPECT but never in a real device?")
+    print()
+    print("  For each field we take the value(s) seen on SUSPECT hosts and check")
+    print("  whether that SAME value ever appears on a real device.")
+    print()
+    hdr = f"    {'passive field':<14} {'SUSPECT value':<22} {'seen on a REAL device?':<24} result"
+    print(hdr)
+    print(f"    {'-'*12:<14} {'-'*20:<22} {'-'*22:<24} {'-'*10}")
+    for f in ("location", "vendor_name", "model_name", "object_name"):
+        vals = [v for v, _ in susp[f].most_common()]
+        if not vals:
+            print(f"    {f:<14} {'(none)':<22} {'-':<24} skip")
+            continue
+        for v in vals:
+            in_real = v in real[f]
+            seen = f"yes ({real[f][v]} host(s))" if in_real else "no"
+            verdict = "shared -> drop" if in_real else "SUSPECT-only -> candidate"
+            shown = (v[:19] + "...") if len(v) > 22 else v
+            print(f"    {f:<14} {shown!r:<22} {seen:<24} {verdict}")
+    print()
+    print("  Candidate passive indicators, per SUSPECT host")
+    print("  (field values this host shows that NO real device shows):")
+    for ip in suspect_ips:
+        b = passive_bacnet(passive.get(ip, {}))
+        host_rows = [(f, str(b[f])) for f in fields
+                     if b.get(f) not in (None, "") and str(b[f]) not in real[f]]
+        print(f"\n    {ip}")
+        print(f"      {'passive field':<16} value")
+        print(f"      {'-'*14:<16} {'-'*30}")
+        if not host_rows:
+            print(f"      {'(none)':<16}")
+        for f, v in host_rows:
+            print(f"      {f:<16} {v!r}")
+    print()
+    print("  => each such value is a candidate passive indicator: it separates")
+    print("     emulators from real devices, so it can be folded back into the")
+    print("     passive pipeline for the next full-population run.")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

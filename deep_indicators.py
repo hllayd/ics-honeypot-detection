@@ -16,6 +16,8 @@ and Censys detections are not removed up front; instead they are retained as a
 monotone floor and reported as part of the combined total.
 
 Input : population.json  (the full Censys pull; every ICS host is scored)
+        ipinfo_map.json  (per-IP AS/company category from enrich_ipinfo.py;
+                          supplies the paper-faithful network_type metric)
 Output: deep_findings.csv (per-host triggered indicators + confidence)
         + summary table (stdout)
 
@@ -455,6 +457,12 @@ def _arg(name, default):
 
 PATH = os.path.join(HERE, _arg("--file", "population.json"))
 OUT = os.path.join(HERE, _arg("--out", "deep_findings.csv"))
+IPINFO = os.path.join(HERE, _arg("--ipinfo", "ipinfo_map.json"))
+
+# Point the adopted paper module at the SAME IPinfo file (it provides the
+# paper-faithful network_type / as.type == hosting|education metric).
+import paper_original_port as _paper
+_paper._IPINFO_PATH = IPINFO
 
 ICS_OBJS = ("modbus", "s7", "bacnet", "eip", "fox", "iec60870_5_104",
             "opc_ua", "fins", "melsec", "mms", "dnp3")
@@ -498,7 +506,7 @@ _IPINFO_ASTYPE = None
 def _ipinfo_astype():
     global _IPINFO_ASTYPE
     if _IPINFO_ASTYPE is None:
-        p = os.path.join(HERE, "ipinfo_map.json")
+        p = IPINFO
         if os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 _IPINFO_ASTYPE = {ip: (v.get("as_type") or v.get("type"))
@@ -1272,17 +1280,18 @@ def main():
             ind_counter[k] += 1
         conf_counter[conf] += 1
 
+        censys_hp = "yes" if "HONEYPOT" in host_labels(r.get("services", [])) else "no"
+        metrics = sorted(pm | paper_strong | paper_weak | paper_sig | set(triggered))
         rows.append({
             "ip": ip,
+            "censys_honeypot?": censys_hp,
             "confidence": conf,
             "n_independent_metrics": n_metrics,
-            "paper_metrics": ";".join(sorted(pm | paper_strong | paper_weak | paper_sig)),
-            "new_indicators": ";".join(sorted(triggered)),
-            "evidence": " || ".join(f"{k}:{v[0]}:{v[1]}" for k, v in sorted(triggered.items())),
-            "protocols": ";".join(protocols_of(r)),
             "asn": asn_of(r),
             "as_name": (r.get("autonomous_system") or {}).get("name"),
             "country": (r.get("location") or {}).get("country"),
+            "metrics": ";".join(metrics),
+            "evidence": " || ".join(f"{k}:{v[0]}:{v[1]}" for k, v in sorted(triggered.items())),
         })
 
     rows.sort(key=lambda x: (-{"HIGH": 3, "MEDIUM": 2, "LOW": 1}[x["confidence"]],
