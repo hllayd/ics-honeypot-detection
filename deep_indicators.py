@@ -1151,26 +1151,44 @@ def graded_key(base, grade):
 def main():
     if not os.path.exists(PATH):
         sys.exit(f"ERROR: {PATH} missing.")
-    print(f"Loading: {PATH}")
+    def _hr(title):
+        print("\n" + "=" * 62)
+        print(f" {title}")
+        print("=" * 62)
+
+    _hr("STEP 1/4  Load population and select ICS hosts")
+    print(f"   [1.1] reading {os.path.basename(PATH)} ...")
     with open(PATH, encoding="utf-8") as f:
         d = json.load(f)
     recs = [h.get("host_v1", {}).get("resource") for h in d["result"]["hits"]]
     recs = [r for r in recs if r]
     N_all = len(recs)
+    print(f"         parsed hosts          : {N_all:>10,}")
     # Keep only ICS hosts; the unified classifier then scores EVERY ICS host in a
     # single pass. There is no residual pre-filtering: the adopted paper signals
     # join the same pool via paper_signals(), so paper/Censys detections are kept
     # as a monotone floor rather than removed up front.
     recs = [r for r in recs if "ICS" in host_labels(r.get("services", []))]
     N = len(recs)
-    print(f"ICS hosts: {N} / {N_all}")
+    print(f"   [1.2] keep ICS-labelled hosts : {N:>10,} / {N_all:,}")
 
-    print("Computing indicator C (cross-host cluster)...")
+    _hr("STEP 2/4  Cross-host (relational) indicators  [two-pass precompute]")
+    print("   [2.1] Indicator C  templated deployment across hosts ...")
     cluster = build_cluster_labels(recs)
-    print("Computing indicator F (serial ASN-clone)...")
+    print(f"         -> {len(cluster):>10,} hosts flagged")
+    print("   [2.2] Indicator F  identity/serial cloned across ASNs ...")
     clones = build_clone_labels(recs)
-    print("Computing indicator K (co-location cluster)...")
+    print(f"         -> {len(clones):>10,} hosts flagged")
+    print("   [2.3] Indicator K  co-location fingerprint cluster ...")
     colo = build_colocation_labels(recs)
+    print(f"         -> {len(colo):>10,} hosts flagged")
+
+    _hr("STEP 3/4  Score every host in one pass")
+    print("   evaluated per host, in order:")
+    print("     3.1 signature layer        : 9 default-identity signatures (HIGH alone)")
+    print("     3.2 single-host indicators : A B D E G H I J N P")
+    print("     3.3 adopted paper metrics  : network AS-type, open-port count")
+    print("     3.4 merge step-2 results, then classify HIGH / MEDIUM / LOW")
 
     rows = []
     conf_counter = Counter()
@@ -1178,7 +1196,9 @@ def main():
     upgraded = 0       # paper-LOW promoted to MEDIUM (host-of-interest)
     sig_high = 0       # DIRECTLY HIGH thanks ONLY to a new signature (paper-tier)
 
-    for r in recs:
+    for i, r in enumerate(recs, 1):
+        if i % 20000 == 0 or i == N:
+            print(f"       scoring ... {i:>10,} / {N:,}")
         ip = r.get("ip")
         triggered = {}  # name -> (strength, evidence)
 
@@ -1278,6 +1298,8 @@ def main():
 
         for k in triggered:
             ind_counter[k] += 1
+        for k in (paper_sig | paper_strong | paper_weak):
+            ind_counter[k] += 1
         conf_counter[conf] += 1
 
         censys_hp = "yes" if "HONEYPOT" in host_labels(r.get("services", [])) else "no"
@@ -1301,9 +1323,10 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print("=" * 72)
-    print(f"Flagged hosts (>=1 metric): {len(rows)} / {N}")
-    print("--- Confidence distribution ---")
+    _hr("STEP 4/4  Write findings and summarise")
+    print(f"   findings written  -> {OUT}")
+    print(f"   flagged hosts (>=1 metric): {len(rows):,} / {N:,}")
+    print("   --- confidence distribution ---")
     for c in ("HIGH", "MEDIUM", "LOW"):
         print(f"   {c:7s}: {conf_counter[c]}")
     print(f"   -> paper alone would rate LOW but a new metric lifts to MEDIUM+: {upgraded}")
