@@ -272,19 +272,19 @@ def main():
     print("  READING 1   VALIDATION  -  where the passive honeypot verdict (P)")
     print("                            meets the live active class (A)")
     print("=" * 70)
-    print("  P = this work's passive classifier (STRONG->honeypot, weak-only->below).")
+    print("  P = this work's passive classifier (STRONG->POT, weak-only->NOT).")
     print("  Count the hosts in each P x A combination:")
     print()
     print(f"    {'P (passive)':<14} {'A (active read)':<16} {'hosts':>5}   reading")
     print(f"    {'-'*12:<14} {'-'*14:<16} {'-'*5:>5}   {'-'*30}")
     rows = [
-        ("honeypot", "SUSPECT",     "active read agrees -> confirmed"),
-        ("honeypot", "REAL_DEVICE", "P says POT & A is REAL -> reject the candidate indicator"),
-        ("below",    "SUSPECT",     "passive under-called -> DISCOVERY lead"),
-        ("below",    "REAL_DEVICE", "both agree -> genuine device"),
+        ("honeypot", "POT", "SUSPECT",     "active read agrees -> confirmed"),
+        ("honeypot", "POT", "REAL_DEVICE", "reject the candidate indicator"),
+        ("below",    "NOT", "SUSPECT",     "passive under-called -> DISCOVERY lead"),
+        ("below",    "NOT", "REAL_DEVICE", "both agree -> genuine device"),
     ]
-    for p, a, note in rows:
-        print(f"    {p:<14} {a:<16} {pa.get((p, a), 0):>5}   {note}")
+    for p, plabel, a, note in rows:
+        print(f"    {plabel:<14} {a:<16} {pa.get((p, a), 0):>5}   {note}")
     print()
     print("  => the comparison is self-checking. Where the two agree, the passive")
     print("     verdict is confirmed. The honeypot x REAL_DEVICE row is the REJECT")
