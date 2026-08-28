@@ -1195,11 +1195,14 @@ def main():
     ind_counter = Counter()
     upgraded = 0       # paper-LOW promoted to MEDIUM (host-of-interest)
     sig_high = 0       # DIRECTLY HIGH thanks ONLY to a new signature (paper-tier)
+    censys_hp_count = 0  # hosts carrying Censys' own built-in HONEYPOT label
 
     for i, r in enumerate(recs, 1):
         if i % 20000 == 0 or i == N:
             print(f"       scoring ... {i:>10,} / {N:,}")
         ip = r.get("ip")
+        if "HONEYPOT" in host_labels(r.get("services", [])):
+            censys_hp_count += 1
         triggered = {}  # name -> (strength, evidence)
 
         # --- SIGNATURE layer (like the paper: default-string => HIGH on its own) ---
@@ -1329,6 +1332,7 @@ def main():
     print("   --- confidence distribution ---")
     for c in ("HIGH", "MEDIUM", "LOW"):
         print(f"   {c:7s}: {conf_counter[c]}")
+    print(f"   Censys' own HONEYPOT label (all ICS hosts): {censys_hp_count:,}")
     print(f"   -> paper alone would rate LOW but a new metric lifts to MEDIUM+: {upgraded}")
     print(f"   -> DIRECTLY HIGH via a NEW default-string SIGNATURE (paper-tier, standalone): {sig_high}")
     print("--- Indicator triggers (hosts) ---")
