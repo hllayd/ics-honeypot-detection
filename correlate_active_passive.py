@@ -189,7 +189,7 @@ def main():
     # readable meaning of each P x A cell (the 4 validation buckets)
     CELL_READING = {
         ("honeypot", "SUSPECT"):     "confirmed_honeypot",
-        ("honeypot", "REAL_DEVICE"): "review_looks_real_live",
+        ("honeypot", "REAL_DEVICE"): "reject_candidate_indicator",
         ("below",    "SUSPECT"):     "discovery_passive_undercalled",
         ("below",    "REAL_DEVICE"): "agree_genuine_device",
         ("honeypot", "MODBUS_ALIVE_NOID"): "honeypot_alive_no_identity_inconclusive",
@@ -279,17 +279,24 @@ def main():
     print(f"    {'-'*12:<14} {'-'*14:<16} {'-'*5:>5}   {'-'*30}")
     rows = [
         ("honeypot", "SUSPECT",     "active read agrees -> confirmed"),
-        ("honeypot", "REAL_DEVICE", "1-protocol read looks real -> review"),
+        ("honeypot", "REAL_DEVICE", "P says POT & A is REAL -> reject the candidate indicator"),
         ("below",    "SUSPECT",     "passive under-called -> DISCOVERY lead"),
         ("below",    "REAL_DEVICE", "both agree -> genuine device"),
     ]
     for p, a, note in rows:
         print(f"    {p:<14} {a:<16} {pa.get((p, a), 0):>5}   {note}")
     print()
-    print("  => the comparison is self-checking: where the two agree the passive")
-    print("     verdict is confirmed; where they differ the host is flagged for")
-    print("     review. A REAL_DEVICE read is a shallow single-protocol response,")
-    print("     not a refutation of the multi-service passive evidence.")
+    print("  => the comparison is self-checking. Where the two agree, the passive")
+    print("     verdict is confirmed. The honeypot x REAL_DEVICE row is the REJECT")
+    print("     case: when P says POT but the live read says A is REAL, the candidate")
+    print("     indicator is REJECTED. These hosts were flagged by the BROAD candidate-")
+    print("     selection draft of the BACnet name<->id mismatch (built from the whole")
+    print("     ASHRAE registry), and the live read shows genuine self-consistent")
+    print("     devices (e.g. Siemens vendor_id 7, real model, ISP network). Reject thus")
+    print("     exposed a false-positive mode of the WIDE draft -- which is exactly")
+    print("     why the final signature keeps only proven soft-server names (e.g.")
+    print("     'BACnet Stack at SourceForge'), not the whole registry. Same loop")
+    print("     that dropped drafts L and M, here used to NARROW a rule, not drop it.")
 
     print("\n" + "=" * 70)
     print("  READING 2   DISCOVERY  -  find the passive shadow of active")
