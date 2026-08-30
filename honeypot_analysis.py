@@ -88,7 +88,7 @@ labels = [p for p, _ in top_proto][::-1]
 vals = [v for _, v in top_proto][::-1]
 ax.barh(labels, vals, color="#c0392b")
 ax.set_xlabel("H+M honeypot hosts")
-ax.set_title("6.1  Most common protocols among suspected honeypots (H+M)")
+ax.set_title("Most common protocols among suspected honeypots (H+M)")
 for i, v in enumerate(vals):
     ax.text(v, i, " " + f"{v:,}", va="center", fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig61_protocols.png", dpi=140); plt.close(fig)
@@ -105,7 +105,7 @@ labs = [c for c, _ in top_country][::-1]
 vals = [v for _, v in top_country][::-1]
 ax.barh(labs, vals, color="#2c3e50")
 ax.set_xlabel("Suspected honeypots (H+M)")
-ax.set_title("6.2  Top-15 countries by honeypot count")
+ax.set_title("Top-15 countries by honeypot count")
 for i, v in enumerate(vals):
     ax.text(v, i, " " + f"{v:,}", va="center", fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig62_country_count.png", dpi=140); plt.close(fig)
@@ -131,7 +131,7 @@ ax.barh(labs, vals, color="#8e44ad")
 ax.axvline(overall_prop * 100, color="red", ls="--", lw=1,
            label=f"global {overall_prop*100:.1f}%")
 ax.set_xlabel("Honeypots as % of exposed ICS hosts")
-ax.set_title("6.3  Honeypot proportion per country (>=200 ICS hosts)")
+ax.set_title("Honeypot proportion per country (>=200 ICS hosts)")
 ax.legend(fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig63_proportion.png", dpi=140); plt.close(fig)
 
@@ -155,7 +155,7 @@ labs = [short(as_name_map.get(a, ""), a) for a, _ in top_as][::-1]
 vals = [n for _, n in top_as][::-1]
 ax.barh(labs, vals, color="#16a085")
 ax.set_xlabel("Suspected honeypots (H+M)")
-ax.set_title("6.4  Top-15 ASes hosting suspected honeypots")
+ax.set_title("Top-15 ASes hosting suspected honeypots")
 for i, v in enumerate(vals):
     ax.text(v, i, " " + f"{v:,}", va="center", fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig64_as.png", dpi=140); plt.close(fig)
@@ -179,7 +179,7 @@ fig, ax = plt.subplots(figsize=(7.5, 5.5))
 vals = [v for _, v in bt]
 wedges, _ = ax.pie(vals, colors=colors[:len(bt)], startangle=90,
                    wedgeprops=dict(width=0.45, edgecolor="white"))
-ax.set_title("6.5  Suspected honeypots by IP-range business type\n(IPInfo company.type)")
+ax.set_title("Suspected honeypots by IP-range business type\n(IPInfo company.type)")
 legend_labels = [f"{k}: {v:,} ({v/len(hm)*100:.1f}%)" for k, v in bt]
 ax.legend(wedges, legend_labels, title="Business type",
           loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=9)
@@ -209,7 +209,7 @@ for xs, lab, col in [(hp_ports, "honeypots (H+M)", "#c0392b"),
 ax.set_xscale("log")
 ax.set_xlabel("open port count (log)")
 ax.set_ylabel("CDF")
-ax.set_title("6.5  Open-port-count CDF: honeypots vs real")
+ax.set_title("Open-port-count CDF: honeypots vs real")
 ax.legend(fontsize=8); ax.grid(alpha=0.3)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig65_ports_cdf.png", dpi=140); plt.close(fig)
 
@@ -233,7 +233,7 @@ labs = [str(k) if k < 6 else "6+" for k in ks]
 ax.bar(labs, vs, color="#d35400")
 ax.set_xlabel("distinct ICS protocols emulated by one host")
 ax.set_ylabel("H+M honeypot hosts")
-ax.set_title("6.6  Multi-protocol honeypots")
+ax.set_title("Multi-protocol honeypots")
 for i, v in enumerate(vs):
     ax.text(i, v, f"{v:,}", ha="center", va="bottom", fontsize=8)
 fig.tight_layout(); fig.savefig(f"{FIGDIR}/fig66_multiproto.png", dpi=140); plt.close(fig)
@@ -336,7 +336,7 @@ for tick, c in zip(lbl_objs, promoted):
     tick.set_color(C_PROMOTED if c else "#333333")
 ax.set_xlim(0, max(vals) * 1.12)
 ax.set_xlabel("H+M honeypot hosts")
-ax.set_title("6.7  Top-20 signature / indicator combinations by host count",
+ax.set_title("Top-20 signature / indicator combinations by host count",
              fontsize=10, loc="right")
 for yi, v, c in zip(y, vals, promoted):
     ax.text(v + max(vals) * 0.01, yi, f"{v:,}", va="center", fontsize=8,
