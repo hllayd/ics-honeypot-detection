@@ -1341,6 +1341,30 @@ def main():
     print("=" * 72)
     print(f"-> {OUT}")
 
+    # ---- HEADLINE SUMMARY (demo) --------------------------------------------
+    # Paper-alone honeypot count on this SAME population, produced by
+    # paper_original_port.py (Mladenov et al. method, authoritative IPInfo).
+    # Kept as a documented constant so the demo prints the additive gain.
+    PAPER_ALONE_HONEYPOTS = 20005
+    honeypot = conf_counter["HIGH"] + conf_counter["MEDIUM"]
+    delta = honeypot - PAPER_ALONE_HONEYPOTS
+    pct = 100.0 * delta / PAPER_ALONE_HONEYPOTS
+    share = 100.0 * honeypot / N
+    print()
+    print("#" * 72)
+    print("  RESULTS")
+    print("#" * 72)
+    print(f"  Exposed ICS hosts scanned          : {N:>10,}")
+    print(f"  Censys' own HONEYPOT label         : {censys_hp_count:>10,}")
+    print(f"  Likely honeypots (HIGH + MEDIUM)   : {honeypot:>10,}   "
+          f"({share:.1f}%)")
+    print(f"      HIGH   (signature-certain)     : {conf_counter['HIGH']:>10,}")
+    print(f"      MEDIUM (from indicators)       : {conf_counter['MEDIUM']:>10,}")
+    print(f"  Adopted method alone (Mladenov)    : {PAPER_ALONE_HONEYPOTS:>10,}")
+    print(f"  THIS WORK adds                     : {'+' + format(delta, ','):>10}   "
+          f"(+{pct:.1f}%)")
+    print("#" * 72)
+
 
 if __name__ == "__main__":
     main()
