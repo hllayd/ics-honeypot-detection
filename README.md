@@ -186,15 +186,19 @@ verdict `P` and the active ground-truth class `A`.
 **Step 0 — Candidate selection (`select_active_probe_candidates.py`).** The probe
 budget is limited, so each batch probes a ranked shortlist of about 100 hosts, not the
 whole population. Only hosts the passive pipeline left **below threshold** (`LOW` or
-`NONE`) are eligible — the aim is to catch misses, not to re-check hosts already flagged
-`HIGH`/`MEDIUM`. Each eligible host is scored by its strongest weak passive signal (a
-reserved BACnet id, an OPC-UA SDK default, a shared serial, …), with an exact BACnet
-vendor-name/id registry mismatch ranked highest, then ordered by score and by how many
-actively-probeable protocols it exposes. The top hundred are written to
-`active_probe_top100.csv` with a per-protocol probe bundle. Successive batches exclude
-already-probed IPs, and optional filters drop UDP-only or cellular-carrier hosts that
-earlier batches showed to be a false-positive trap. **Fourteen such batches were run in
-total, probing about 1,400 host records in all.**
+`NONE`) — that is, hosts that fall below the adopted method's own host-of-interest
+threshold and are therefore not counted as honeypots — are eligible; the aim is to catch
+misses, not to re-check hosts already flagged `HIGH`/`MEDIUM`. Each eligible host is
+scored by its strongest weak passive signal (a reserved BACnet id, an OPC-UA SDK default,
+a shared serial, …), with an exact BACnet vendor-name/id registry mismatch ranked
+highest, then ordered by score and by how many actively-probeable protocols it exposes.
+The selector is extensible: a new candidate rule can optionally be added to its code so
+that an additional passive signal promotes further below-threshold hosts into the
+shortlist for the next batch. The top hundred are written to `active_probe_top100.csv`
+with a per-protocol probe bundle. Successive batches exclude already-probed IPs, and
+optional filters drop UDP-only or cellular-carrier hosts that earlier batches showed to
+be a false-positive trap. **Fourteen such batches were run in total, probing about 1,400
+host records in all.**
 
 **Step 1 — Probe queries (`probe_active.py`).** The prober asks each host for its own
 identity using the native read/status request of the protocol on that port:
@@ -217,19 +221,25 @@ Each answer is mapped to one ground-truth class by fixed rules:
 | `ALIVE-NO-ID` | speaks the protocol (e.g. a valid Modbus exception) but returns no identity → weakly real |
 | `DEAD` | no protocol response at all → inconclusive, excluded from the contrast |
 
-**Step 3a — Validation (compare `P` with `A`).** Join every probed host by IP.
-Agreement (`P` = honeypot and `A` = `SUSPECT`) confirms the label; disagreement
-(`P` = honeypot but `A` = `REAL_DEVICE`) rejects it. This is **not** an exhaustive
-re-check of every flagged host: the candidate selector deliberately targets
-below-threshold hosts, so validation covers a **representative sample** across the
-different classification pathways, not the full positive set — a confidence check on the
-method, not a statistical precision measurement. On that sample it confirmed positives
-and rejected the draft indicators **L** and **M**, whose hosts turned out to be genuine
-cellular gateways. Two concrete cases show both directions:
+**Step 3a — Validation (compare `P` with `A`).** For validation each probed host is read
+as **POT** (passively flagged as a potential honeypot, `HIGH` or `MEDIUM`) or **NOT**
+(left below threshold), and joined by IP to its active class `A`. The four `P`×`A`
+combinations give a self-checking 2×2 reading:
 
-- *Positive confirmation:* hosts flagged for a reserved BACnet vendor id (indicator **J**)
-  answered a live Who-Is with `vendor_id 888` / name `Hankyong`; 888 is not an assigned
-  ASHRAE vendor id, so a live device using it is an emulator — matching the passive verdict.
+| `P` (passive) | `A` (active read) | Reading |
+|---------------|-------------------|---------|
+| POT | `SUSPECT` | active read agrees → passive verdict confirmed |
+| POT | `REAL_DEVICE` | reject the candidate indicator (false positive) |
+| NOT | `SUSPECT` | passive under-called → discovery lead for a new rule |
+| NOT | `REAL_DEVICE` | both agree → genuine device |
+
+This is **not** an exhaustive re-check of every flagged host: the candidate selector
+deliberately targets below-threshold hosts, so validation covers a **representative
+sample** across the different classification pathways, not the full positive set — a
+confidence check on the method, not a statistical precision measurement. On that sample
+it confirmed positives and rejected the draft indicators **L** and **M**, whose hosts
+turned out to be genuine cellular gateways. A concrete confirmation:
+
 - *Cross-host confirmation:* the same EtherNet/IP serial `0x006cb804` appeared passively
   across four autonomous systems, and a read-only ListIdentity to each returned the
   identical serial and product string, confirming a single cloned emulator image
@@ -242,9 +252,12 @@ and is absent from real devices is a discriminator; if the same value **also has
 passive shadow** in the Censys data, it becomes a new, purely passive rule for the next
 run. This is how indicator **N** (EtherNet/IP ListServices with an empty ListIdentity,
 raw `63 00 00 00 00 00 00 00 01 00 00 00`), the WAGO co-location indicator **K**
-(`urn:wago-com:opcua-server`), and the open62541 default `application_uri`
-(`urn:unconfigured:application`) behind indicator **I** were first found. These three are
-the indicators that active probing genuinely *discovered*. By contrast, the
+(`urn:wago-com:opcua-server`), the open62541 default `application_uri`
+(`urn:unconfigured:application`) behind indicator **I**, and the reserved BACnet vendor
+id behind indicator **J** were first found. For **J**, below-threshold hosts answered a
+live Who-Is with `vendor_id 888` / name `Hankyong`; 888 is not an assigned ASHRAE vendor
+id, so a live device using it is an emulator, and because the reserved-id state has a
+passive shadow in the Censys BACnet fields it became a new passive rule. By contrast, the
 default-identity signatures such as `SIG_modbus_pymodbus` and `SIG_mms_libiec61850` were
 derived from analysing known honeypot/emulator software, **not** from probing. Active
 probing therefore builds better passive rules; it is not the detector itself.
