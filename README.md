@@ -290,6 +290,19 @@ py deep_indicators.py                     # unified classifier -> deep_findings.
 py honeypot_analysis.py                   # -> figures + analysis_stats.json
 ```
 
+### Optional: read-only active-probing validation and discovery
+
+This stage is **optional** and independent of the passive results above. It
+selects below-threshold candidates, probes them read-only, and joins the live
+answers back to the passive verdicts for validation and discovery (see
+[*Optional read-only active-probing validation and discovery*](#optional-read-only-active-probing-validation-and-discovery)).
+
+```powershell
+py select_active_probe_candidates.py      # -> active_probe_top100.csv
+py probe_active.py --csv active_probe_top100.csv --out batch1_results.json   # read-only probe
+py correlate_active_passive.py            # -> active_passive_join.json (validation + discovery)
+```
+
 ## Ethics
 
 All active probing is strictly read-only: no write,
